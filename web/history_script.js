@@ -1,6 +1,18 @@
-// Stopwatch History Analytics Logic
-let stopwatchHistory = [];
-let activeTheme = 'dark';
+/**
+ * Stopwatch History Analytics - Client Logic
+ * 
+ * This script runs inside the secondary GTK WebKit webview (web/history.html).
+ * It is responsible for:
+ *   1. Receiving stopwatch history logs and themes from the Python backend via IPC.
+ *   2. Dynamically rendering an SVG-based bar chart of session durations.
+ *   3. Rendering a scrollable side-panel of recorded sessions with single-deletion controls.
+ *   4. Syncing deleted entries or clear-all commands back to Python in real-time.
+ *   5. Displaying interactive glassmorphic tooltips when hovering over chart bars.
+ */
+
+// Core state variables
+let stopwatchHistory = []; // Local cache of stopwatch runs (format: { name, time, date })
+let activeTheme = 'dark';    // Current theme matching parent clock ('dark' | 'mint' | 'neon' | 'amber')
 
 // DOM Elements
 const chartContainer = document.getElementById('chart-container');
@@ -10,29 +22,37 @@ const tooltipName = document.getElementById('tooltip-name');
 const tooltipTime = document.getElementById('tooltip-time');
 const tooltipDate = document.getElementById('tooltip-date');
 
-// Wait for DOM
+/**
+ * Initialization Event Listener
+ * Sets up basic window action bindings and flags the backend that the UI is fully loaded.
+ */
 window.addEventListener('DOMContentLoaded', () => {
-  // Bind close window button
+  // Bind close button to signal the Python wrapper to close the secondary Gtk.Window
   document.getElementById('btn-close-window').addEventListener('click', () => {
     sendCloseMessage();
   });
 
-  // Bind clear all button
+  // Bind clear all button to clean the local cache, sync to Python, and re-render
   document.getElementById('btn-clear-all').addEventListener('click', () => {
     clearAllHistory();
   });
 
-  // Notify Python that the history page is ready to receive data
+  // Signal the Python backend that the script context is loaded and ready.
+  // Python will reply by injecting current configurations via window.setTheme and window.setStopwatchHistory.
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.history_ready) {
+    console.log("[DEBUG] Posting history_ready message to WebKit bridge.");
     window.webkit.messageHandlers.history_ready.postMessage(null);
   } else {
-    // Dev fallback with mock data
-    console.log("WebKit environment not detected. Loading development mock data.");
+    // Development/Fallback environment (e.g., standard browser view)
+    console.log("[DEBUG] WebKit bridge not detected. Loading development mock data.");
     loadMockData();
   }
 });
 
-// Mock data for browser testing
+/**
+ * loadMockData
+ * Populates local variables with sample sessions to facilitate quick debugging in local web browsers.
+ */
 function loadMockData() {
   activeTheme = 'neon';
   document.body.className = 'theme-neon';
@@ -47,54 +67,102 @@ function loadMockData() {
   renderDashboard();
 }
 
-// IPC calls from Python
+// ==========================================
+// IPC BRIDGING (COMMUNICATION WITH PYTHON)
+// ==========================================
+
+/**
+ * window.setTheme
+ * Called dynamically from Python's main.py to sync the active theme setting.
+ * @param {string} themeName - Theme name ('dark' | 'mint' | 'neon' | 'amber')
+ */
 window.setTheme = function(themeName) {
+  console.log(`[DEBUG] Received theme update from Python: ${themeName}`);
   activeTheme = themeName || 'dark';
-  document.body.className = '';
+  document.body.className = ''; // Reset body classes
   if (activeTheme !== 'dark') {
     document.body.classList.add(`theme-${activeTheme}`);
   }
+  // Re-render dashboard because gradients on SVG bars must match the new theme accent colors
   renderDashboard();
 };
 
+/**
+ * window.setStopwatchHistory
+ * Called dynamically from Python's main.py when config loads or stopwatch sessions update.
+ * @param {Array} historyArray - Serialized JSON array of stopwatch sessions
+ */
 window.setStopwatchHistory = function(historyArray) {
+  console.log(`[DEBUG] Received history update from Python. Length: ${historyArray ? historyArray.length : 0}`);
   stopwatchHistory = historyArray || [];
   renderDashboard();
 };
 
-// Send actions back to Python
+/**
+ * syncHistoryToPython
+ * Posts the stringified history log back to Python context to be stored in config.json.
+ */
 function syncHistoryToPython() {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.update_history) {
+    console.log("[DEBUG] Syncing updated history back to Python backend.");
     window.webkit.messageHandlers.update_history.postMessage(JSON.stringify(stopwatchHistory));
   }
 }
 
+/**
+ * sendCloseMessage
+ * Signals Python's window_control message handler to close/destroy the history window container.
+ */
 function sendCloseMessage() {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
+    console.log("[DEBUG] Signaling Python to close the history window.");
     window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({ action: "close" }));
   }
 }
 
-// Clear all records
+// ==========================================
+// LOG ENTRIES OPERATIONS
+// ==========================================
+
+/**
+ * clearAllHistory
+ * Empties the history log, triggers synchronization back to the filesystem, and refreshes the viewport.
+ */
 function clearAllHistory() {
   if (stopwatchHistory.length === 0) return;
   if (confirm("Are you sure you want to clear all stopwatch history records?")) {
+    console.log("[ACTION] Clearing all history logs.");
     stopwatchHistory = [];
     syncHistoryToPython();
     renderDashboard();
   }
 }
 
-// Delete single log entry
+/**
+ * deleteItem
+ * Deletes a single entry from the logs array, syncs state to python, and triggers a visual redraw.
+ * @param {number} index - Index of the item in the local stopwatchHistory array
+ */
 function deleteItem(index) {
   if (index >= 0 && index < stopwatchHistory.length) {
+    console.log(`[ACTION] Deleting history log at index: ${index}`);
     stopwatchHistory.splice(index, 1);
     syncHistoryToPython();
     renderDashboard();
   }
 }
 
-// Helper: duration HH:MM:SS -> seconds
+// ==========================================
+// MATHS & TIME CONVERSION UTILITIES
+// ==========================================
+
+/**
+ * durationToSeconds
+ * Parses a standard stopwatch duration string to raw seconds.
+ * Supports format: "HH:MM:SS" (e.g. "01:15:30" -> 4530)
+ * @param {string} durationStr - Formatted time string
+ * @returns {number} Time in seconds
+ */
 function durationToSeconds(durationStr) {
   if (!durationStr) return 0;
   const parts = durationStr.split(':').map(Number);
@@ -108,7 +176,13 @@ function durationToSeconds(durationStr) {
   return 0;
 }
 
-// Helper: seconds -> HH:MM:SS or MM:SS
+/**
+ * formatSeconds
+ * Converts raw seconds back to formatted string.
+ * Formats: "HH:MM:SS" if hours > 0, otherwise "MM:SS". Used for chart labels.
+ * @param {number} totalSecs - Time in seconds
+ * @returns {string} Formatted output string
+ */
 function formatSeconds(totalSecs) {
   const h = Math.floor(totalSecs / 3600);
   const m = Math.floor((totalSecs % 3600) / 60);
@@ -119,29 +193,41 @@ function formatSeconds(totalSecs) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// Helper: Get nice scale step
+/**
+ * getNiceTickStep
+ * Calculates a clean step division for the Y-axis based on the maximum recorded duration.
+ * This prevents arbitrary/messy floating scale numbers (e.g. splits scale at 15s, 5m, 1h increments).
+ * @param {number} maxVal - Max duration in seconds
+ * @returns {number} Step size in seconds
+ */
 function getNiceTickStep(maxVal) {
-  const rawStep = maxVal / 4;
+  const rawStep = maxVal / 4; // Split the Y-axis height into 4 segments (resulting in 5 grid markings)
   if (rawStep <= 1) return 1;
   if (rawStep <= 2) return 2;
   if (rawStep <= 5) return 5;
   if (rawStep <= 10) return 10;
   if (rawStep <= 15) return 15;
   if (rawStep <= 30) return 30;
-  if (rawStep <= 60) return 60;      // 1m
-  if (rawStep <= 120) return 120;    // 2m
-  if (rawStep <= 300) return 300;    // 5m
-  if (rawStep <= 600) return 600;    // 10m
-  if (rawStep <= 900) return 900;    // 15m
-  if (rawStep <= 1800) return 1800;  // 30m
-  if (rawStep <= 3600) return 3600;  // 1h
+  if (rawStep <= 60) return 60;      // 1 minute
+  if (rawStep <= 120) return 120;    // 2 minutes
+  if (rawStep <= 300) return 300;    // 5 minutes
+  if (rawStep <= 600) return 600;    // 10 minutes
+  if (rawStep <= 900) return 900;    // 15 minutes
+  if (rawStep <= 1800) return 1800;  // 30 minutes
+  if (rawStep <= 3600) return 3600;  // 1 hour
   
+  // For durations > 1 hour, round up to full hours
   const hours = rawStep / 3600;
   const roundedHours = Math.ceil(hours);
   return roundedHours * 3600;
 }
 
-// Helper: HTML escaper
+/**
+ * escapeHtml
+ * Sanitizes input string to prevent potential XSS injection vectors through session labels.
+ * @param {string} str - Raw string
+ * @returns {string} Escaped HTML string
+ */
 function escapeHtml(str) {
   if (!str) return '';
   return str
@@ -152,16 +238,27 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-// Render the entire layout
+// ==========================================
+// RENDER ACTIONS (DOM MANIPULATION)
+// ==========================================
+
+/**
+ * renderDashboard
+ * Helper to update both visual sections of the analytics viewport in a single invocation.
+ */
 function renderDashboard() {
   renderLogs();
   renderChart();
 }
 
-// Render right side logs list
+/**
+ * renderLogs
+ * Builds the right-hand scrollable side-panel showing individual log rows.
+ */
 function renderLogs() {
   if (!logsList) return;
 
+  // Render an empty-state message if there are no logs saved
   if (stopwatchHistory.length === 0) {
     logsList.innerHTML = `
       <div class="empty-state">
@@ -175,6 +272,7 @@ function renderLogs() {
     return;
   }
 
+  // Iterate chronologically through logs and compile HTML templates
   let html = '';
   stopwatchHistory.forEach((item, index) => {
     html += `
@@ -193,11 +291,16 @@ function renderLogs() {
   logsList.innerHTML = html;
 }
 
-// Render left side dynamic SVG bar chart
+/**
+ * renderChart
+ * Generates and draws the dynamic SVG bar chart in the left panel.
+ * Performs math to scale Y-axis values and handles overflow horizontal scroll limits.
+ */
 function renderChart() {
   if (!chartContainer) return;
-  chartContainer.innerHTML = '';
+  chartContainer.innerHTML = ''; // Reset container content
 
+  // Draw empty state message if no data exists
   if (stopwatchHistory.length === 0) {
     chartContainer.innerHTML = `
       <div class="empty-state">
@@ -211,78 +314,84 @@ function renderChart() {
     return;
   }
 
-  // Set sizing parameters
+  // Sizing metrics
   const containerWidth = chartContainer.clientWidth || 420;
   const containerHeight = chartContainer.clientHeight || 320;
+  
+  // Padding zones inside the SVG to allocate space for axes labels
   const padding = { top: 25, right: 20, bottom: 45, left: 60 };
-
   const chartHeight = containerHeight - padding.top - padding.bottom;
 
-  // Determine SVG width (enable horizontal scrolling if too many items)
-  const minBarWidthWithGap = 48; // bar width 26px + gap 22px
+  // Math check: determine width requirements.
+  // We specify a minimum bar width + spacing gap (48px) to guarantee readability.
+  // If the total width exceeds the container clientWidth, we set a larger width to enable scrollbars.
+  const minBarWidthWithGap = 48; 
   const calculatedWidth = padding.left + padding.right + (stopwatchHistory.length * minBarWidthWithGap);
   const svgWidth = Math.max(containerWidth, calculatedWidth);
   const chartWidth = svgWidth - padding.left - padding.right;
 
-  // Create outer scroll wrapper if chart overflows the container width
+  // Toggle layout structure depending on whether scrolling is triggered
   if (calculatedWidth > containerWidth) {
     chartContainer.style.justifyContent = 'flex-start';
-    chartContainer.className = 'chart-scroll-wrapper';
+    chartContainer.className = 'chart-scroll-wrapper'; // Horizontal overflow auto
   } else {
     chartContainer.style.justifyContent = 'center';
     chartContainer.className = '';
   }
 
-  // Calculate scales
+  // Calculate scaling factors for the chart
   const durations = stopwatchHistory.map(item => durationToSeconds(item.time));
   const maxRecordedSec = Math.max(...durations);
   
-  // Clean tick step calculation
+  // Get neat division interval size
   const tickStep = getNiceTickStep(maxRecordedSec);
-  const maxScaleVal = tickStep * 4; // 4 intervals
+  const maxScaleVal = tickStep * 4; // 4 intervals on scale height
 
-  // SVG NS
+  // Create SVG element programmatically under the SVG Namespace
   const svgNS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNS, "svg");
   svg.setAttribute("width", svgWidth);
   svg.setAttribute("height", containerHeight);
 
-  // Gradient Definition matching HSL themes
+  // SVG Definitions block to house dynamic linear gradients
   const defs = document.createElementNS(svgNS, "defs");
   
-  // Neon Theme Gradient (Cyan to Pink)
+  // 1. Neon Theme Gradient definition (Cyan to Hot Pink)
   const neonGrad = createLinearGradient(svgNS, "gradient-neon", "#00f0ff", "#ff55a3");
   defs.appendChild(neonGrad);
 
-  // Mint Theme Gradient (Mint green)
+  // 2. Mint Theme Gradient definition (Linux Mint bright green to dark green)
   const mintGrad = createLinearGradient(svgNS, "gradient-mint", "#87cf3e", "#5ca120");
   defs.appendChild(mintGrad);
 
-  // Amber Theme Gradient (Amber Nixie orange)
+  // 3. Amber Theme Gradient definition (Nixie tube orange to light orange)
   const amberGrad = createLinearGradient(svgNS, "gradient-amber", "#ff7b00", "#ffb870");
   defs.appendChild(amberGrad);
 
-  // Dark Theme Gradient (Monochromatic white/gray)
+  // 4. Dark Theme Gradient definition (Monochromatic matte white to gray)
   const darkGrad = createLinearGradient(svgNS, "gradient-dark", "#ffffff", "#888888");
   defs.appendChild(darkGrad);
 
   svg.appendChild(defs);
 
-  // 1. Draw horizontal gridlines and Y-axis scale markings
+  // ----------------------------------------------------
+  // DRAW AXIS MARKS, TICK LABELS, AND HORIZONTAL LINES
+  // ----------------------------------------------------
   for (let i = 0; i <= 4; i++) {
     const value = tickStep * i;
+    // Map value to coordinate y. Coordinate system has (0,0) in top-left corner
     const yVal = padding.top + chartHeight - (value / maxScaleVal) * chartHeight;
 
-    // Gridline
+    // Draw horizontal grid line
     const gridLine = document.createElementNS(svgNS, "line");
     gridLine.setAttribute("x1", padding.left);
     gridLine.setAttribute("y1", yVal);
     gridLine.setAttribute("x2", svgWidth - padding.right);
     gridLine.setAttribute("y2", yVal);
-    gridLine.setAttribute("class", "chart-grid-line");
+    gridLine.setAttribute("class", "chart-grid-line"); // Styling handled by styles inside history.html
     svg.appendChild(gridLine);
 
-    // Y Axis labels
+    // Draw scale tick text label
     const textLabel = document.createElementNS(svgNS, "text");
     textLabel.setAttribute("x", padding.left - 10);
     textLabel.setAttribute("y", yVal + 4);
@@ -292,8 +401,10 @@ function renderChart() {
     svg.appendChild(textLabel);
   }
 
-  // 2. Draw Axis lines
-  // Y Axis line
+  // ----------------------------------------------------
+  // DRAW MAIN COORDINATE AXES
+  // ----------------------------------------------------
+  // Vertical Y-Axis line
   const yAxis = document.createElementNS(svgNS, "line");
   yAxis.setAttribute("x1", padding.left);
   yAxis.setAttribute("y1", padding.top);
@@ -302,7 +413,7 @@ function renderChart() {
   yAxis.setAttribute("class", "chart-axis");
   svg.appendChild(yAxis);
 
-  // X Axis line
+  // Horizontal X-Axis line
   const xAxis = document.createElementNS(svgNS, "line");
   xAxis.setAttribute("x1", padding.left);
   xAxis.setAttribute("y1", padding.top + chartHeight);
@@ -311,31 +422,34 @@ function renderChart() {
   xAxis.setAttribute("class", "chart-axis");
   svg.appendChild(xAxis);
 
-  // 3. Render Bars and Labels
-  const barWidth = 24;
-  const barSpace = chartWidth / stopwatchHistory.length;
+  // ----------------------------------------------------
+  // DRAW RECTANGLE BARS AND THEIR LABELS
+  // ----------------------------------------------------
+  const barWidth = 24; // Fixed bar width
+  const barSpace = chartWidth / stopwatchHistory.length; // Spacing interval width per item
   
   stopwatchHistory.forEach((item, index) => {
     const sec = durationToSeconds(item.time);
+    // Convert duration to height in pixels
     const barHeight = maxScaleVal > 0 ? (sec / maxScaleVal) * chartHeight : 0;
     
-    // Position calculations
-    // Center the bars in their allotted space slice
+    // Position math: center the bar inside the divided space slot
     const x = padding.left + (index * barSpace) + (barSpace - barWidth) / 2;
     const y = padding.top + chartHeight - barHeight;
 
-    // Rect Bar
+    // Create SVG <rect> element representing the bar
     const rect = document.createElementNS(svgNS, "rect");
     rect.setAttribute("x", x);
     rect.setAttribute("y", y);
     rect.setAttribute("width", barWidth);
-    rect.setAttribute("height", Math.max(2, barHeight)); // Ensure tiny values still draw a line
-    rect.setAttribute("rx", 3);
+    // Ensure very short runs still show a 2px horizontal slice to provide hover target feedback
+    rect.setAttribute("height", Math.max(2, barHeight)); 
+    rect.setAttribute("rx", 3); // Slightly rounded top corners
     rect.setAttribute("ry", 3);
     rect.setAttribute("class", "chart-bar");
-    rect.setAttribute("fill", `url(#gradient-${activeTheme})`);
+    rect.setAttribute("fill", `url(#gradient-${activeTheme})`); // Link gradient fill by id
 
-    // Attach tooltips
+    // Event listeners to handle glassmorphic tooltips
     rect.addEventListener('mouseover', (e) => {
       showTooltip(e, item);
     });
@@ -348,19 +462,27 @@ function renderChart() {
 
     svg.appendChild(rect);
 
-    // Label under the bar (X-axis labels)
+    // Create session label text under the bar (X-axis text label)
     const label = document.createElementNS(svgNS, "text");
     label.setAttribute("x", x + barWidth / 2);
     label.setAttribute("y", padding.top + chartHeight + 16);
     label.setAttribute("class", "chart-text bar-label");
-    label.textContent = truncateString(item.name, 9);
+    label.textContent = truncateString(item.name, 9); // Truncated name (hover reveals full text)
     svg.appendChild(label);
   });
 
   chartContainer.appendChild(svg);
 }
 
-// Helper: Linear Gradient Generator
+/**
+ * createLinearGradient
+ * Generates an SVG `<linearGradient>` tag programmatically.
+ * @param {string} svgNS - SVG Namespace URL
+ * @param {string} id - HTML ID attribute
+ * @param {string} colorStart - Top start color hex
+ * @param {string} colorEnd - Bottom end color hex
+ * @returns {SVGElement} Completed linearGradient element
+ */
 function createLinearGradient(svgNS, id, colorStart, colorEnd) {
   const grad = document.createElementNS(svgNS, "linearGradient");
   grad.setAttribute("id", id);
@@ -369,56 +491,77 @@ function createLinearGradient(svgNS, id, colorStart, colorEnd) {
   grad.setAttribute("x2", "0%");
   grad.setAttribute("y2", "100%");
 
+  // Top anchor color (full opacity)
   const stop1 = document.createElementNS(svgNS, "stop");
   stop1.setAttribute("offset", "0%");
   stop1.setAttribute("stop-color", colorStart);
   stop1.setAttribute("stop-opacity", "1");
 
+  // Bottom anchor color (semi-translucent to align with glassmorphic styles)
   const stop2 = document.createElementNS(svgNS, "stop");
   stop2.setAttribute("offset", "100%");
   stop2.setAttribute("stop-color", colorEnd);
-  stop2.setAttribute("stop-opacity", "0.25"); // Fades to semi-translucent for glassmorphic style
+  stop2.setAttribute("stop-opacity", "0.25");
 
   grad.appendChild(stop1);
   grad.appendChild(stop2);
   return grad;
 }
 
-// Helper: Truncator
+/**
+ * truncateString
+ * Limits length of text and appends suffix dots.
+ * @param {string} str - Target string
+ * @param {number} length - Maximum length
+ * @returns {string} Truncated string
+ */
 function truncateString(str, length) {
   if (!str) return '';
   return str.length > length ? str.slice(0, length) + '..' : str;
 }
 
-// Tooltip Handlers
+// ==========================================
+// TOOLTIP VIEWPORTS MANAGEMENT
+// ==========================================
+
+/**
+ * showTooltip
+ * Fills data and fades in the custom floating card viewport.
+ * @param {Event} event - Mouseover event
+ * @param {Object} item - History log item containing session meta
+ */
 function showTooltip(event, item) {
   tooltipName.textContent = item.name;
   tooltipTime.textContent = `Duration: ${item.time}`;
   tooltipDate.textContent = `Recorded: ${item.date}`;
   tooltip.style.opacity = '1';
-  tooltip.style.transform = 'scale(1)';
+  tooltip.style.transform = 'scale(1)'; // pop scale effect
   positionTooltip(event);
 }
 
+/**
+ * positionTooltip
+ * Computes coordinates for the tooltip to follow the cursor.
+ * Performs collision checking with window edges to prevent clipping.
+ * @param {Event} event - Mousemove event
+ */
 function positionTooltip(event) {
-  // We offset the tooltip relative to mouse position
-  // Get viewport bounds of container to avoid spilling out
-  const bounds = chartContainer.getBoundingClientRect();
   const mouseX = event.clientX;
   const mouseY = event.clientY;
 
-  // Tooltip dimensions estimation
+  // Measure tooltip size dynamically
   const tooltipWidth = tooltip.offsetWidth || 140;
   const tooltipHeight = tooltip.offsetHeight || 60;
 
+  // Offset tooltip slightly up and to the right of the cursor
   let x = mouseX + 12;
   let y = mouseY - tooltipHeight - 12;
 
-  // Horizontal bounds safety
+  // Horizontal collision prevention: push left if spilling off-screen right
   if (x + tooltipWidth > window.innerWidth - 16) {
     x = mouseX - tooltipWidth - 12;
   }
-  // Vertical bounds safety
+  // Vertical collision prevention: push down if spilling off-screen top
   if (y < 16) {
     y = mouseY + 16;
   }
@@ -427,6 +570,10 @@ function positionTooltip(event) {
   tooltip.style.top = `${y}px`;
 }
 
+/**
+ * hideTooltip
+ * Fades out and scales down the tooltip.
+ */
 function hideTooltip() {
   tooltip.style.opacity = '0';
   tooltip.style.transform = 'scale(0.95)';
