@@ -1,0 +1,12 @@
+# Ignore local log files
+widget.log
+
+# Ignore local configurations
+config.json
+
+# Ignore Python compiler caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/

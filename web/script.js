@@ -1,5 +1,30 @@
 // State variables
 let use24Hour = true;
+
+// Centralized Logger Helper to bridge messages to Python backend log
+function logToBackend(level, message) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.log) {
+    window.webkit.messageHandlers.log.postMessage(JSON.stringify({
+      level: level,
+      message: message,
+      source: 'main_clock'
+    }));
+  } else {
+    console.log(`[JS-FALLBACK] [${level}] ${message}`);
+  }
+}
+
+// Redirect global JS errors to the centralized log file
+window.onerror = function(message, source, lineno, colno, error) {
+  const errMsg = `${message} at ${source}:${lineno}:${colno}`;
+  logToBackend('ERROR', errMsg);
+  return false;
+};
+
+window.onunhandledrejection = function(event) {
+  const errMsg = `Unhandled Promise Rejection: ${event.reason}`;
+  logToBackend('ERROR', errMsg);
+};
 let showSeconds = true;
 let isLocked = false;
 let currentDigits = {
@@ -327,6 +352,7 @@ function updateControlButtonsUI() {
 
 // API methods exposed to Python
 window.setTheme = function(themeName) {
+  logToBackend('DEBUG', `Received theme change: ${themeName}`);
   document.body.className = ''; // Reset
   if (themeName !== 'dark') { // Treat dark (monochromatic) as default root theme
     document.body.classList.add(`theme-${themeName}`);
@@ -365,6 +391,7 @@ window.setLocked = function(locked) {
 
 window.setMode = function(modeName) {
   const prevMode = currentMode;
+  logToBackend('INFO', `Switching widget mode from '${prevMode}' to '${modeName}'`);
   currentMode = modeName;
   document.body.classList.remove('mode-clock', 'mode-stopwatch', 'mode-timer', 'timer-alert-active');
   document.body.classList.add(`mode-${modeName}`);
@@ -406,11 +433,13 @@ window.setMode = function(modeName) {
 window.toggleTimerState = function() {
   if (currentMode === 'stopwatch') {
     stopwatchRunning = !stopwatchRunning;
+    logToBackend('INFO', `Stopwatch toggled. Running = ${stopwatchRunning}`);
   } else if (currentMode === 'timer') {
     if (timerFinished) {
       window.resetTimerState();
     }
     timerRunning = !timerRunning;
+    logToBackend('INFO', `Timer toggled. Running = ${timerRunning}`);
   }
   updateControlButtonsUI();
   updateRunningClasses();
@@ -418,6 +447,7 @@ window.toggleTimerState = function() {
 };
 
 window.resetTimerState = function() {
+  logToBackend('INFO', `Resetting active clock states for mode '${currentMode}'`);
   document.body.classList.remove('timer-alert-active');
   if (currentMode === 'stopwatch') {
     stopwatchRunning = false;
@@ -781,6 +811,7 @@ function recordStopwatchSession() {
     stopwatchHistory.pop();
   }
 
+  logToBackend('INFO', `Recording new stopwatch session: name='${sessionName}', time='${formattedTime}'`);
   // Update Python config
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.update_history) {
     window.webkit.messageHandlers.update_history.postMessage(JSON.stringify(stopwatchHistory));

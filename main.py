@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import warnings
+import logging
 import gi
 
 # Suppress GObject/WebKit deprecation warnings
@@ -17,6 +18,32 @@ from gi.repository import Gtk, Gdk, WebKit2, GLib
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
 AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "flip-clock.desktop")
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "widget.log")
+
+def setup_logging():
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    # Format: [Timestamp] [Level] Message
+    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    
+    # File Handler - records everything from DEBUG up
+    file_handler = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # Console Handler - outputs INFO and above
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+setup_logging()
+logging.info("==================================================")
+logging.info("Starting Flip Clock application initialization...")
+logging.info("==================================================")
+
 
 DEFAULT_CONFIG = {
     "x": 200,
@@ -35,6 +62,7 @@ DEFAULT_CONFIG = {
 
 class FlipClockWidget:
     def __init__(self):
+        logging.info("Initializing FlipClockWidget UI elements...")
         self.save_timeout_id = None
         self.history_window = None
         self.history_webview = None
@@ -44,14 +72,18 @@ class FlipClockWidget:
         self.apply_config_to_window()
 
     def load_config(self):
+        logging.info("Loading config.json settings file...")
         self.config = DEFAULT_CONFIG.copy()
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     saved = json.load(f)
                     self.config.update(saved)
+                logging.info("config.json loaded successfully.")
             except Exception as e:
-                print(f"Error loading config: {e}")
+                logging.error(f"Error loading configuration file: {e}")
+        else:
+            logging.warning("config.json file not found. Falling back to default settings.")
         
         # Verify autostart file actual status matches config
         has_autostart_file = os.path.exists(AUTOSTART_FILE)
@@ -60,10 +92,12 @@ class FlipClockWidget:
 
     def save_config(self):
         try:
+            logging.info("Saving configurations to config.json...")
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.config, f, indent=2)
+            logging.info("Configurations saved successfully.")
         except Exception as e:
-            print(f"Error saving config: {e}")
+            logging.error(f"Error saving configurations: {e}")
 
     def init_ui(self):
         # Create a Top-Level borderless window
@@ -133,6 +167,10 @@ class FlipClockWidget:
 
         manager.register_script_message_handler("show_history")
         manager.connect("script-message-received::show_history", self.on_js_show_history)
+
+        # Log bridge for debugging
+        manager.register_script_message_handler("log")
+        manager.connect("script-message-received::log", self.on_js_log)
 
         # Intercept context menu to show native GTK menu instead of browser menu
         self.webview.connect("context-menu", self.on_context_menu)
@@ -334,13 +372,42 @@ class FlipClockWidget:
             print(f"Error saving history update: {e}")
 
     def on_js_show_history(self, manager, js_result):
+        logging.info("[IPC] Received request to show history window.")
         self.show_history_window()
+
+    def on_js_log(self, manager, js_result):
+        """Bridge JavaScript console logs to python standard logging module."""
+        try:
+            data_str = js_result.get_js_value().to_string()
+            data = json.loads(data_str)
+            level = data.get("level", "INFO").upper()
+            msg = data.get("message", "")
+            window_src = data.get("source", "main")
+            
+            # Map levels to standard logging calls
+            log_func = logging.info
+            if level == "DEBUG":
+                log_func = logging.debug
+            elif level == "WARNING":
+                log_func = logging.warning
+            elif level == "ERROR":
+                log_func = logging.error
+                
+            log_func(f"[JS] [{window_src}] {msg}")
+        except Exception as e:
+            try:
+                msg = js_result.get_js_value().to_string()
+                logging.info(f"[JS] [raw] {msg}")
+            except Exception:
+                logging.error(f"Error processing JS message logger callback: {e}")
 
     def show_history_window(self):
         if self.history_window is not None:
+            logging.info("Stopwatch History Analytics window already open. Focusing window.")
             self.history_window.present()
             return
 
+        logging.info("Creating Stopwatch History Analytics window container...")
         self.history_window = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
         self.history_window.set_title("Stopwatch History Analytics")
         self.history_window.set_default_size(760, 480)
@@ -373,6 +440,8 @@ class FlipClockWidget:
         history_manager.connect("script-message-received::update_history", self.on_js_update_history)
         history_manager.register_script_message_handler("window_control")
         history_manager.connect("script-message-received::window_control", self.on_js_history_window_control)
+        history_manager.register_script_message_handler("log")
+        history_manager.connect("script-message-received::log", self.on_js_log)
 
         self.history_window.add(self.history_webview)
         
@@ -385,6 +454,7 @@ class FlipClockWidget:
         self.history_window.show_all()
 
     def on_history_window_destroy(self, widget):
+        logging.info("Stopwatch History Analytics window closed/destroyed.")
         self.history_window = None
         self.history_webview = None
 
