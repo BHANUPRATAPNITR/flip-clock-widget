@@ -1,0 +1,774 @@
+/* Design Tokens and Themes */
+:root {
+  /* Default: Matte Black & White Theme */
+  --bg-card: #121212; /* Pure matte black/dark gray */
+  --text-card: #ffffff; /* Crisp white digits */
+  --glass-bg: rgba(15, 15, 15, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --shadow-card: rgba(0, 0, 0, 0.85);
+  --shadow-glow: rgba(255, 255, 255, 0.05);
+  --text-date: #e0e0e0; /* High contrast clean white-gray */
+  --color-colon: #ffffff;
+}
+
+body.theme-mint {
+  --bg-card: hsl(215, 24%, 10%);
+  --text-card: #87cf3e; /* Linux Mint bright green */
+  --glass-bg: rgba(16, 26, 20, 0.88);
+  --glass-border: rgba(135, 207, 62, 0.18);
+  --shadow-card: rgba(0, 0, 0, 0.65);
+  --shadow-glow: rgba(135, 207, 62, 0.35);
+  --text-date: #b5f573; /* Brightened for readability */
+  --color-colon: #87cf3e;
+}
+
+body.theme-dark {
+  /* Aligns with the default root values */
+  --bg-card: #121212;
+  --text-card: #ffffff;
+  --glass-bg: rgba(15, 15, 15, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --shadow-card: rgba(0, 0, 0, 0.85);
+  --shadow-glow: rgba(255, 255, 255, 0.05);
+  --text-date: #e0e0e0;
+  --color-colon: #ffffff;
+}
+
+body.theme-neon {
+  --bg-card: hsl(280, 30%, 6%);
+  --text-card: #00f0ff; /* Cyan digits */
+  --glass-bg: rgba(12, 4, 20, 0.88);
+  --glass-border: rgba(0, 240, 255, 0.2);
+  --shadow-card: rgba(0, 0, 0, 0.8);
+  --shadow-glow: rgba(255, 0, 127, 0.45); /* Hot pink glow */
+  --text-date: #ff55a3; /* Brightened neon pink */
+  --color-colon: #00f0ff;
+}
+
+body.theme-amber {
+  --bg-card: #1c0e02;
+  --text-card: #ff7b00; /* Nixie amber orange */
+  --glass-bg: rgba(22, 10, 2, 0.88);
+  --glass-border: rgba(255, 123, 0, 0.16);
+  --shadow-card: rgba(0, 0, 0, 0.75);
+  --shadow-glow: rgba(255, 123, 0, 0.3);
+  --text-date: #ffb870; /* Brighter nixie amber */
+  --color-colon: #ff7b00;
+}
+
+/* Global Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: transparent !important;
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+/* Widget Container */
+.widget-wrapper {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: max-content; /* Prevent layout shrinking below full widget size */
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  border: 1px solid var(--glass-border);
+  border-radius: 28px;
+  padding: 32px 48px 24px 48px; /* Increased padding */
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.7),
+              0 0 40px 0 var(--shadow-glow);
+  transition: transform 0.2s ease, box-shadow 0.3s ease, background 0.3s ease, border 0.3s ease;
+  transform-origin: center center;
+  cursor: grab;
+  position: relative;
+}
+
+.widget-wrapper:active {
+  cursor: grabbing;
+}
+
+/* Clock Row */
+.clock-container {
+  position: relative;
+  display: flex;
+  align-items: flex-start; /* Align top edges of cards and colons */
+  justify-content: center;
+  gap: 32px; /* Increased gap for clear visual separation without colons */
+  width: max-content; /* Prevent digit wrapping or column compression */
+}
+
+/* Group Wrapper (Stack cards and label vertically) */
+.group-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px; /* Increased gap */
+}
+
+/* Group Labels */
+.group-label {
+  font-size: 11px; /* Increased size slightly */
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-date);
+  opacity: 0.65;
+  transition: color 0.3s ease;
+}
+
+/* Flip Groups (Hours, Minutes, Seconds) */
+.flip-group {
+  display: flex;
+  gap: 8px; /* Increased gap between cards */
+}
+
+/* Colon Separators */
+.colon-separator {
+  display: none !important; /* Colons are hidden as requested */
+}
+
+.colon-dot {
+  width: 10px;
+  height: 10px;
+  background-color: var(--color-colon);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--color-colon);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  animation: blink 1s infinite steps(1, start);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Hide seconds by default or display them conditionally */
+.seconds-group, .seconds-separator {
+  display: flex; /* Can be toggled or styled differently */
+}
+
+/* The Flip Card container */
+.card {
+  position: relative;
+  width: 96px; /* Increased card width */
+  height: 140px; /* Increased card height */
+  perspective: 450px; /* Adjusted perspective for larger size */
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  border-radius: 16px; /* Increased corner radius */
+  box-shadow: 0 10px 24px var(--shadow-card);
+}
+
+/* Horizontal line dividing card */
+.card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background-color: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 0px rgba(255, 255, 255, 0.08);
+  z-index: 10;
+}
+
+/* Card Face (top/bottom, front/back) */
+.card-face {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background-color: var(--bg-card);
+  color: var(--text-card);
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  text-shadow: 0 0 12px var(--shadow-glow);
+  transition: background-color 0.3s ease, color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.card-face span {
+  font-family: 'Outfit', sans-serif;
+  font-size: 105px; /* Increased font size */
+  font-weight: 800;
+  text-align: center;
+  display: block;
+  width: 100%;
+  height: 140px; /* Matches parent card height */
+  line-height: 140px; /* Vertically center the digit within the 140px bounds */
+  position: absolute;
+  left: 0;
+}
+
+/* Top halves */
+.top-back, .top-front {
+  top: 0;
+  border-top-left-radius: 14px; /* Matches card inner radius */
+  border-top-right-radius: 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.top-back span, .top-front span {
+  top: 0;
+}
+
+/* Bottom halves */
+.bottom-back, .bottom-front {
+  bottom: 0;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+}
+
+.bottom-back span, .bottom-front span {
+  bottom: 0;
+}
+
+/* Layering */
+.top-back {
+  z-index: 1;
+}
+
+.bottom-back {
+  z-index: 1;
+}
+
+.bottom-front {
+  z-index: 2;
+  transform-origin: top;
+  -webkit-transform-origin: top;
+  transform: rotateX(90deg);
+  -webkit-transform: rotateX(90deg);
+  will-change: transform;
+}
+
+.top-front {
+  z-index: 3;
+  transform-origin: bottom;
+  -webkit-transform-origin: bottom;
+  will-change: transform;
+}
+
+/* Animations */
+.card.flipping .top-front {
+  animation: flip-top 0.6s linear forwards;
+  -webkit-animation: flip-top 0.6s linear forwards;
+}
+
+.card.flipping .bottom-front {
+  animation: flip-bottom 0.6s linear forwards;
+  -webkit-animation: flip-bottom 0.6s linear forwards;
+}
+
+@keyframes flip-top {
+  0% {
+    transform: rotateX(0deg);
+    animation-timing-function: ease-in;
+  }
+  50% {
+    transform: rotateX(-90deg);
+  }
+  100% {
+    transform: rotateX(-90deg);
+  }
+}
+
+@-webkit-keyframes flip-top {
+  0% {
+    -webkit-transform: rotateX(0deg);
+    -webkit-animation-timing-function: ease-in;
+  }
+  50% {
+    -webkit-transform: rotateX(-90deg);
+  }
+  100% {
+    -webkit-transform: rotateX(-90deg);
+  }
+}
+
+@keyframes flip-bottom {
+  0% {
+    transform: rotateX(90deg);
+  }
+  50% {
+    transform: rotateX(90deg);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+@-webkit-keyframes flip-bottom {
+  0% {
+    -webkit-transform: rotateX(90deg);
+  }
+  50% {
+    -webkit-transform: rotateX(90deg);
+    -webkit-animation-timing-function: ease-out;
+  }
+  100% {
+    -webkit-transform: rotateX(0deg);
+  }
+}
+
+/* Date Overlay */
+.date-container {
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2.5px;
+  color: var(--text-date);
+  text-shadow: 0 0 10px rgba(0,0,0,0.6);
+  opacity: 0.95;
+  transition: color 0.3s ease;
+  text-align: center;
+  white-space: nowrap; /* Ensure date displays horizontally on a single line */
+}
+
+/* Drag Hint Overlay */
+.drag-hint {
+  margin-top: 10px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.3s ease, margin 0.3s ease;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Show drag hint on hover when position is unlocked */
+.widget-wrapper:hover .drag-hint.visible {
+  opacity: 1;
+  height: 14px;
+  margin-top: 10px;
+}
+
+/* Card scale custom style injector helpers */
+body.seconds-hidden .seconds-group, 
+body.seconds-hidden .seconds-separator {
+  display: none !important;
+}
+
+/* Timer Flash Alert */
+@keyframes flash-red {
+  0%, 100% {
+    box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.7),
+                0 0 40px 0 var(--shadow-glow);
+    background: var(--glass-bg);
+    border-color: var(--glass-border);
+  }
+  50% {
+    box-shadow: 0 16px 48px -8px rgba(255, 30, 30, 0.75),
+                0 0 40px 12px rgba(255, 30, 30, 0.55);
+    background: rgba(255, 30, 30, 0.16);
+    border-color: rgba(255, 30, 30, 0.45);
+  }
+}
+
+@-webkit-keyframes flash-red {
+  0%, 100% {
+    box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.7),
+                0 0 40px 0 var(--shadow-glow);
+    background: var(--glass-bg);
+    border-color: var(--glass-border);
+  }
+  50% {
+    box-shadow: 0 16px 48px -8px rgba(255, 30, 30, 0.75),
+                0 0 40px 12px rgba(255, 30, 30, 0.55);
+    background: rgba(255, 30, 30, 0.16);
+    border-color: rgba(255, 30, 30, 0.45);
+  }
+}
+
+body.timer-alert-active .widget-wrapper {
+  animation: flash-red 1s infinite ease-in-out;
+  -webkit-animation: flash-red 1s infinite ease-in-out;
+}
+
+/* Widget Label Text Input Box (contenteditable div) */
+#widget-label {
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 8px 16px;
+  width: 360px; /* Wider to support text wrapping beautifully */
+  min-height: 38px;
+  max-height: 76px;
+  margin-bottom: 18px;
+  text-align: center;
+  outline: none;
+  overflow-y: auto;
+  scrollbar-width: none; /* Hide Firefox scrollbar */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  word-break: break-word;
+  white-space: normal;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  will-change: background, border-color, box-shadow;
+}
+
+#widget-label::-webkit-scrollbar {
+  display: none; /* Hide Chrome/Safari scrollbar */
+}
+
+#widget-label:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+#widget-label:focus {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 12px 0 rgba(255, 255, 255, 0.06);
+}
+
+#widget-label:empty::before {
+  content: attr(placeholder);
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: none;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  display: block;
+  width: 100%;
+}
+
+/* Timer Controls Panel */
+.timer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  height: 48px;
+  overflow: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+body.mode-timer .timer-controls,
+body.mode-stopwatch .timer-controls {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Control Buttons */
+.control-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-date);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.08);
+}
+
+.control-btn:active {
+  transform: scale(0.92);
+}
+
+/* Preset Buttons */
+.preset-buttons {
+  display: flex;
+  gap: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 12px;
+}
+
+body.mode-stopwatch .preset-buttons {
+  display: none;
+}
+
+.preset-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-date);
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+  opacity: 0.65;
+}
+
+.preset-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+.preset-btn.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  opacity: 1;
+}
+
+/* Window Controls (Minimize, Maximize, Close) */
+.window-controls {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 100;
+}
+
+.widget-wrapper:hover .window-controls {
+  opacity: 1;
+}
+
+.win-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-date);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.win-btn svg {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.window-controls:hover .win-btn svg {
+  opacity: 0.75;
+}
+
+.win-btn:hover svg {
+  opacity: 1 !important;
+}
+
+.win-btn:hover {
+  transform: scale(1.08);
+}
+
+.win-btn:active {
+  transform: scale(0.92);
+}
+
+/* Close button custom style */
+.win-btn.win-close:hover {
+  background: #ff5f56;
+  border-color: #ff5f56;
+  color: #ffffff;
+}
+
+/* Minimize button custom style */
+.win-btn.win-minimize:hover {
+  background: #ffbd2e;
+  border-color: #ffbd2e;
+  color: #1a1a1a;
+}
+
+/* Maximize button custom style */
+.win-btn.win-maximize:hover {
+  background: #27c93f;
+  border-color: #27c93f;
+  color: #ffffff;
+}
+
+/* Segmented Mode Selector Tab Bar */
+.mode-selector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 3px;
+  margin-bottom: 20px;
+  width: max-content;
+  gap: 4px;
+  will-change: background, border-color;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.mode-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-date);
+  opacity: 0.6;
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease, opacity 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.mode-tab:hover {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mode-tab:active {
+  transform: scale(0.96);
+}
+
+.mode-tab.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  color: #ffffff;
+}
+
+/* Vertical Timer Slider Container */
+.timer-slider-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 140px;
+  position: absolute;
+  right: -28px;
+  top: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+/* Show only in timer mode when it is NOT running */
+body.mode-timer .timer-slider-container {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+body.mode-timer.timer-running .timer-slider-container {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Slider Track */
+.slider-track {
+  position: relative;
+  width: 6px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.timer-slider-container:hover .slider-track {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Slider Knob */
+.slider-knob {
+  position: absolute;
+  left: calc(50% - 10px);
+  bottom: 0px;
+  width: 20px;
+  height: 20px;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), 
+              0 0 10px rgba(255, 255, 255, 0.3);
+  cursor: grab;
+  transition: transform 0.1s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+  will-change: bottom, transform;
+}
+
+.slider-knob:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 
+              0 0 14px var(--shadow-glow);
+}
+
+.slider-knob:active {
+  cursor: grabbing;
+  transform: scale(0.95);
+}
+
+/* Theme color sync for slider knob */
+body.theme-mint .slider-knob {
+  background: #87cf3e;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), 0 0 12px rgba(135, 207, 62, 0.5);
+}
+body.theme-neon .slider-knob {
+  background: #00f0ff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 240, 255, 0.5);
+}
+body.theme-amber .slider-knob {
+  background: #ff7b00;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), 0 0 12px rgba(255, 123, 0, 0.5);
+}
+
+/* Record & History Buttons - Hidden by default */
+#btn-record,
+#btn-history {
+  display: none !important;
+}
+
+body.mode-stopwatch #btn-record,
+body.mode-stopwatch #btn-history {
+  display: flex !important;
+}
+
+

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flip Clock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="widget-wrapper" id="drag-handle">
+    <!-- Window Controls -->
+    <div class="window-controls">
+      <button class="win-btn win-minimize" id="win-min" title="Minimize">
+        <svg viewBox="0 0 24 24" width="10" height="10">
+          <path fill="currentColor" d="M19,13H5V11H19V13Z"/>
+        </svg>
+      </button>
+      <button class="win-btn win-maximize" id="win-max" title="Maximize">
+        <svg viewBox="0 0 24 24" width="10" height="10">
+          <path fill="currentColor" d="M4,4H20V20H4V4M6,8V18H18V8H6Z"/>
+        </svg>
+      </button>
+      <button class="win-btn win-close" id="win-close" title="Close">
+        <svg viewBox="0 0 24 24" width="10" height="10">
+          <path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="widget-label" contenteditable="true" placeholder="What are you timing?"></div>
+
+    <!-- Mode Selector Segmented Control -->
+    <div class="mode-selector" id="mode-selector">
+      <button class="mode-tab active" data-mode="clock" id="tab-clock">Clock</button>
+      <button class="mode-tab" data-mode="stopwatch" id="tab-stopwatch">Stopwatch</button>
+      <button class="mode-tab" data-mode="timer" id="tab-timer">Timer</button>
+    </div>
+
+    <div class="clock-container">
+      
+      <!-- Hour Group -->
+      <div class="group-wrapper">
+        <div class="flip-group" id="group-hours">
+          <div class="card" id="h1">
+            <div class="card-face top-back"><span>0</span></div>
+            <div class="card-face bottom-back"><span>0</span></div>
+            <div class="card-face top-front"><span>0</span></div>
+            <div class="card-face bottom-front"><span>0</span></div>
+          </div>
+          <div class="card" id="h2">
+            <div class="card-face top-back"><span>0</span></div>
+            <div class="card-face bottom-back"><span>0</span></div>
+            <div class="card-face top-front"><span>0</span></div>
+            <div class="card-face bottom-front"><span>0</span></div>
+          </div>
+        </div>
+        <div class="group-label">Hours</div>
+        <!-- Hours Slider -->
+        <div class="timer-slider-container hours-slider" id="timer-slider-hours">
+          <div class="slider-track" id="slider-track-hours">
+            <div class="slider-knob" id="slider-knob-hours"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Colon -->
+      <div class="colon-separator">
+        <div class="colon-dot"></div>
+        <div class="colon-dot"></div>
+      </div>
+
+      <!-- Minute Group -->
+      <div class="group-wrapper">
+        <div class="flip-group" id="group-minutes">
+          <div class="card" id="m1">
+            <div class="card-face top-back"><span>0</span></div>
+            <div class="card-face bottom-back"><span>0</span></div>
+            <div class="card-face top-front"><span>0</span></div>
+            <div class="card-face bottom-front"><span>0</span></div>
+          </div>
+          <div class="card" id="m2">
+            <div class="card-face top-back"><span>0</span></div>
+            <div class="card-face bottom-back"><span>0</span></div>
+            <div class="card-face top-front"><span>0</span></div>
+            <div class="card-face bottom-front"><span>0</span></div>
+          </div>
+        </div>
+        <div class="group-label">Minutes</div>
+        <!-- Minutes Slider -->
+        <div class="timer-slider-container minutes-slider" id="timer-slider-minutes">
+          <div class="slider-track" id="slider-track-minutes">
+            <div class="slider-knob" id="slider-knob-minutes"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Colon (for seconds, optionally shown) -->
+      <div class="colon-separator seconds-separator">
+        <div class="colon-dot"></div>
+        <div class="colon-dot"></div>
+      </div>
+
+      <!-- Seconds Group -->
+      <div class="group-wrapper seconds-group">
+        <div class="flip-group" id="group-seconds">
+          <div class="card" id="s1">
+            <div class="card-face top-back"><span>0</span></div>
+            <div class="card-face bottom-back"><span>0</span></div>
+            <div class="card-face top-front"><span>0</span></div>
+            <div class="card-face bottom-front"><span>0</span></div>
+          </div>
+          <div class="card" id="s2">
+            <div class="card-face top-back"><span>0</span></div>
+            <div class="card-face bottom-back"><span>0</span></div>
+            <div class="card-face top-front"><span>0</span></div>
+            <div class="card-face bottom-front"><span>0</span></div>
+          </div>
+        </div>
+        <div class="group-label">Seconds</div>
+        <!-- Seconds Slider -->
+        <div class="timer-slider-container seconds-slider" id="timer-slider-seconds">
+          <div class="slider-track" id="slider-track-seconds">
+            <div class="slider-knob" id="slider-knob-seconds"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Timer Controls -->
+    <div class="timer-controls" id="timer-controls">
+      <button class="control-btn" id="btn-play-pause" title="Start / Pause">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path id="play-icon-path" fill="currentColor" d="M8,5.14V19.14L19,12.14L8,5.14Z"/>
+        </svg>
+      </button>
+      <button class="control-btn" id="btn-record" title="Record Stopwatch Session">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path fill="currentColor" d="M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M15,9H5V5H15V9Z"/>
+        </svg>
+      </button>
+      <button class="control-btn" id="btn-history" title="Toggle History Logs">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path fill="currentColor" d="M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3M12,8V13L16.28,15.54L17,14.33L13.5,12.25V8H12Z"/>
+        </svg>
+      </button>
+      <button class="control-btn" id="btn-reset" title="Reset">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path fill="currentColor" d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+        </svg>
+      </button>
+      <div class="preset-buttons">
+        <button class="preset-btn" data-mins="1">1m</button>
+        <button class="preset-btn" data-mins="5">5m</button>
+        <button class="preset-btn" data-mins="15">15m</button>
+        <button class="preset-btn" data-mins="25">25m</button>
+        <button class="preset-btn" data-mins="60">60m</button>
+      </div>
+    </div>
+
+    <!-- Date Overlay -->
+    <div class="date-container" id="date-display">
+      Thursday, June 11, 2026
+    </div>
+
+    <!-- Drag Hint Overlay -->
+    <div class="drag-hint">
+      <svg viewBox="0 0 24 24" width="14" height="14">
+        <path fill="currentColor" d="M10,4A2,2 0 0,1 12,6A2,2 0 0,1 10,8A2,2 0 0,1 8,6A2,2 0 0,1 10,4M14,4A2,2 0 0,1 16,6A2,2 0 0,1 14,8A2,2 0 0,1 12,6A2,2 0 0,1 14,4M10,10A2,2 0 0,1 12,12A2,2 0 0,1 10,14A2,2 0 0,1 8,12A2,2 0 0,1 10,10M14,10A2,2 0 0,1 16,12A2,2 0 0,1 14,14A2,2 0 0,1 12,12A2,2 0 0,1 14,10M10,16A2,2 0 0,1 12,18A2,2 0 0,1 10,20A2,2 0 0,1 8,18A2,2 0 0,1 10,16M14,16A2,2 0 0,1 16,18A2,2 0 0,1 14,20A2,2 0 0,1 12,18A2,2 0 0,1 14,16Z"/>
+      </svg>
+      Hold Super key or drag background to move
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

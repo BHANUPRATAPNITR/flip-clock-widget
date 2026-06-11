@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stopwatch History Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    /* Inline styles dedicated to the history analytics dashboard to keep it modular and clean */
+    :root {
+      /* Theme variables default (dark) */
+      --bg-card: #121212;
+      --text-card: #ffffff;
+      --glass-bg: rgba(15, 15, 15, 0.82);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --shadow-card: rgba(0, 0, 0, 0.85);
+      --shadow-glow: rgba(255, 255, 255, 0.05);
+      --text-date: #e0e0e0;
+      --accent-color: #ffffff;
+      --accent-glow: rgba(255, 255, 255, 0.15);
+      --grid-color: rgba(255, 255, 255, 0.05);
+      --axis-color: rgba(255, 255, 255, 0.2);
+    }
+
+    body.theme-mint {
+      --bg-card: hsl(215, 24%, 10%);
+      --text-card: #87cf3e;
+      --glass-bg: rgba(16, 26, 20, 0.85);
+      --glass-border: rgba(135, 207, 62, 0.18);
+      --shadow-card: rgba(0, 0, 0, 0.65);
+      --shadow-glow: rgba(135, 207, 62, 0.25);
+      --text-date: #b5f573;
+      --accent-color: #87cf3e;
+      --accent-glow: rgba(135, 207, 62, 0.35);
+      --grid-color: rgba(135, 207, 62, 0.06);
+      --axis-color: rgba(135, 207, 62, 0.25);
+    }
+
+    body.theme-neon {
+      --bg-card: hsl(280, 30%, 6%);
+      --text-card: #00f0ff;
+      --glass-bg: rgba(12, 4, 20, 0.85);
+      --glass-border: rgba(0, 240, 255, 0.2);
+      --shadow-card: rgba(0, 0, 0, 0.8);
+      --shadow-glow: rgba(255, 0, 127, 0.35);
+      --text-date: #ff55a3;
+      --accent-color: #00f0ff;
+      --accent-glow: rgba(0, 240, 255, 0.35);
+      --grid-color: rgba(255, 0, 127, 0.08);
+      --axis-color: rgba(0, 240, 255, 0.25);
+    }
+
+    body.theme-amber {
+      --bg-card: #1c0e02;
+      --text-card: #ff7b00;
+      --glass-bg: rgba(22, 10, 2, 0.85);
+      --glass-border: rgba(255, 123, 0, 0.16);
+      --shadow-card: rgba(0, 0, 0, 0.75);
+      --shadow-glow: rgba(255, 123, 0, 0.25);
+      --text-date: #ffb870;
+      --accent-color: #ff7b00;
+      --accent-glow: rgba(255, 123, 0, 0.35);
+      --grid-color: rgba(255, 123, 0, 0.06);
+      --axis-color: rgba(255, 123, 0, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: transparent;
+      color: #ffffff;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 12px;
+    }
+
+    /* Glassmorphic Window Container */
+    .window-container {
+      width: 100%;
+      height: 100%;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: zoomIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes zoomIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Header styling */
+    .header {
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--glass-border);
+      background: rgba(0, 0, 0, 0.15);
+    }
+
+    .title-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .title-icon {
+      color: var(--accent-color);
+      filter: drop-shadow(0 0 6px var(--accent-glow));
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #ffffff;
+    }
+
+    .control-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .action-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--glass-border);
+      color: #ffffff;
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .action-btn:active {
+      transform: translateY(0);
+    }
+
+    .action-btn.danger {
+      color: #ff5f56;
+      border-color: rgba(255, 95, 86, 0.15);
+    }
+
+    .action-btn.danger:hover {
+      background: rgba(255, 95, 86, 0.1);
+      border-color: rgba(255, 95, 86, 0.4);
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.45);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 95, 86, 0.15);
+      color: #ff5f56;
+    }
+
+    /* Main split layout */
+    .dashboard-content {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Left chart column */
+    .chart-viewport {
+      flex: 1.4;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      border-right: 1px solid var(--glass-border);
+      position: relative;
+      min-width: 0; /* Prevents flex items from expanding beyond parent */
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .chart-header {
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chart-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-date);
+      opacity: 0.85;
+    }
+
+    .chart-container-inner {
+      flex: 1;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Scrollable chart wrapper for horizontal chart scrolling when items are large */
+    .chart-scroll-wrapper {
+      width: 100%;
+      height: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      display: block;
+    }
+
+    .chart-scroll-wrapper::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .chart-scroll-wrapper::-webkit-scrollbar-thumb {
+      background: var(--glass-border);
+      border-radius: 3px;
+    }
+
+    .chart-scroll-wrapper::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* SVG Styling */
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .chart-grid-line {
+      stroke: var(--grid-color);
+      stroke-width: 1px;
+    }
+
+    .chart-axis {
+      stroke: var(--axis-color);
+      stroke-width: 1px;
+    }
+
+    .chart-bar {
+      fill: url(#barGradient);
+      cursor: pointer;
+      transition: opacity 0.2s, filter 0.2s;
+    }
+
+    .chart-bar:hover {
+      opacity: 0.95;
+      filter: drop-shadow(0 0 6px var(--accent-glow));
+    }
+
+    .chart-text {
+      fill: rgba(255, 255, 255, 0.65);
+      font-size: 10px;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .chart-text.axis-label {
+      fill: var(--text-date);
+      opacity: 0.75;
+    }
+
+    .chart-text.bar-label {
+      text-anchor: middle;
+      font-size: 9px;
+    }
+
+    /* Right logs column */
+    .logs-viewport {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.12);
+      min-width: 0;
+    }
+
+    .logs-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-date);
+      opacity: 0.85;
+      margin-bottom: 12px;
+    }
+
+    .logs-list {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .logs-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .logs-list::-webkit-scrollbar-thumb {
+      background: var(--glass-border);
+      border-radius: 2px;
+    }
+
+    .logs-list::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Log list items */
+    .log-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      animation: slideIn 0.25s ease-out;
+      transition: all 0.2s ease;
+    }
+
+    .log-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--glass-border);
+      transform: translateX(1px);
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-details {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .log-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .log-meta {
+      font-size: 10px;
+      color: var(--text-date);
+      opacity: 0.5;
+    }
+
+    .log-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .log-time {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 14px;
+      color: var(--accent-color);
+      filter: drop-shadow(0 0 3px var(--accent-glow));
+    }
+
+    .delete-btn {
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 18px;
+      font-weight: 300;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      transition: all 0.2s;
+    }
+
+    .delete-btn:hover {
+      background: rgba(255, 95, 86, 0.15);
+      color: #ff5f56;
+    }
+
+    /* Fallback / empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      height: 100%;
+      width: 100%;
+      color: rgba(255, 255, 255, 0.35);
+      padding: 20px;
+    }
+
+    .empty-state-icon {
+      margin-bottom: 12px;
+      opacity: 0.25;
+      color: var(--accent-color);
+    }
+
+    .empty-state-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 6px;
+      color: rgba(255, 255, 255, 0.65);
+    }
+
+    .empty-state-desc {
+      font-size: 11px;
+      max-width: 240px;
+      line-height: 1.4;
+    }
+
+    /* Chart Tooltip */
+    .chart-tooltip {
+      position: absolute;
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      pointer-events: none;
+      font-size: 11px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transform: scale(0.95);
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .tooltip-name {
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .tooltip-time {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent-color);
+      font-size: 12px;
+    }
+
+    .tooltip-date {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 9px;
+    }
+  </style>
+</head>
+<body>
+  <div class="window-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="title-area">
+        <svg class="title-icon" viewBox="0 0 24 24" width="18" height="18">
+          <path fill="currentColor" d="M19,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M15,9H5V5H15V9Z"/>
+        </svg>
+        <h1>Stopwatch History Analytics</h1>
+      </div>
+      <div class="control-actions">
+        <button class="action-btn danger" id="btn-clear-all" title="Clear all history entries">
+          <svg viewBox="0 0 24 24" width="12" height="12">
+            <path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
+          </svg>
+          Clear All
+        </button>
+        <button class="close-btn" id="btn-close-window" title="Close window">
+          <svg viewBox="0 0 24 24" width="14" height="14">
+            <path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content split -->
+    <div class="dashboard-content">
+      <!-- Left side: SVG Chart -->
+      <div class="chart-viewport" id="chart-viewport">
+        <div class="chart-header">
+          <div class="chart-title">Duration Analytics</div>
+        </div>
+        <div class="chart-container-inner" id="chart-container">
+          <!-- SVG will be dynamically generated here -->
+        </div>
+      </div>
+
+      <!-- Right side: Log list -->
+      <div class="logs-viewport">
+        <div class="logs-title">Recorded Sessions</div>
+        <div class="logs-list" id="logs-list">
+          <!-- Logs will be generated here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Absolute Positioned Tooltip for Chart -->
+  <div class="chart-tooltip" id="chart-tooltip">
+    <div class="tooltip-name" id="tooltip-name"></div>
+    <div class="tooltip-time" id="tooltip-time"></div>
+    <div class="tooltip-date" id="tooltip-date"></div>
+  </div>
+
+  <script src="history_script.js"></script>
+</body>
+</html>
