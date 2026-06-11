@@ -14,6 +14,37 @@
 let stopwatchHistory = []; // Local cache of stopwatch runs (format: { name, time, date })
 let activeTheme = 'dark';    // Current theme matching parent clock ('dark' | 'mint' | 'neon' | 'amber')
 
+/**
+ * logToBackend
+ * Posts a log event payload to the Python backend's 'log' message channel.
+ * @param {string} level - Log level ('DEBUG' | 'INFO' | 'WARNING' | 'ERROR')
+ * @param {string} message - Message body
+ */
+function logToBackend(level, message) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.log) {
+    window.webkit.messageHandlers.log.postMessage(JSON.stringify({
+      level: level,
+      message: message,
+      source: 'history_analytics'
+    }));
+  } else {
+    // Console fallback
+    console.log(`[JS-FALLBACK] [${level}] ${message}`);
+  }
+}
+
+// Global Exception Catchers to redirect JS exceptions to python logs
+window.onerror = function(message, source, lineno, colno, error) {
+  const errMsg = `${message} at ${source}:${lineno}:${colno}`;
+  logToBackend('ERROR', errMsg);
+  return false; // Let browser handle default logging too
+};
+
+window.onunhandledrejection = function(event) {
+  const errMsg = `Unhandled Promise Rejection: ${event.reason}`;
+  logToBackend('ERROR', errMsg);
+};
+
 // DOM Elements
 const chartContainer = document.getElementById('chart-container');
 const logsList = document.getElementById('logs-list');
@@ -40,11 +71,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // Signal the Python backend that the script context is loaded and ready.
   // Python will reply by injecting current configurations via window.setTheme and window.setStopwatchHistory.
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.history_ready) {
-    console.log("[DEBUG] Posting history_ready message to WebKit bridge.");
+    logToBackend('DEBUG', "Posting history_ready message to WebKit bridge.");
     window.webkit.messageHandlers.history_ready.postMessage(null);
   } else {
     // Development/Fallback environment (e.g., standard browser view)
-    console.log("[DEBUG] WebKit bridge not detected. Loading development mock data.");
+    logToBackend('DEBUG', "WebKit bridge not detected. Loading development mock data.");
     loadMockData();
   }
 });
@@ -77,7 +108,7 @@ function loadMockData() {
  * @param {string} themeName - Theme name ('dark' | 'mint' | 'neon' | 'amber')
  */
 window.setTheme = function(themeName) {
-  console.log(`[DEBUG] Received theme update from Python: ${themeName}`);
+  logToBackend('DEBUG', `Received theme update from Python: ${themeName}`);
   activeTheme = themeName || 'dark';
   document.body.className = ''; // Reset body classes
   if (activeTheme !== 'dark') {
@@ -93,7 +124,7 @@ window.setTheme = function(themeName) {
  * @param {Array} historyArray - Serialized JSON array of stopwatch sessions
  */
 window.setStopwatchHistory = function(historyArray) {
-  console.log(`[DEBUG] Received history update from Python. Length: ${historyArray ? historyArray.length : 0}`);
+  logToBackend('DEBUG', `Received history update from Python. Length: ${historyArray ? historyArray.length : 0}`);
   stopwatchHistory = historyArray || [];
   renderDashboard();
 };
@@ -104,7 +135,7 @@ window.setStopwatchHistory = function(historyArray) {
  */
 function syncHistoryToPython() {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.update_history) {
-    console.log("[DEBUG] Syncing updated history back to Python backend.");
+    logToBackend('DEBUG', "Syncing updated history back to Python backend.");
     window.webkit.messageHandlers.update_history.postMessage(JSON.stringify(stopwatchHistory));
   }
 }
@@ -115,7 +146,7 @@ function syncHistoryToPython() {
  */
 function sendCloseMessage() {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
-    console.log("[DEBUG] Signaling Python to close the history window.");
+    logToBackend('DEBUG', "Signaling Python to close the history window.");
     window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({ action: "close" }));
   }
 }
@@ -131,7 +162,7 @@ function sendCloseMessage() {
 function clearAllHistory() {
   if (stopwatchHistory.length === 0) return;
   if (confirm("Are you sure you want to clear all stopwatch history records?")) {
-    console.log("[ACTION] Clearing all history logs.");
+    logToBackend('INFO', "Clearing all history logs.");
     stopwatchHistory = [];
     syncHistoryToPython();
     renderDashboard();
@@ -145,7 +176,7 @@ function clearAllHistory() {
  */
 function deleteItem(index) {
   if (index >= 0 && index < stopwatchHistory.length) {
-    console.log(`[ACTION] Deleting history log at index: ${index}`);
+    logToBackend('INFO', `Deleting history log at index: ${index}`);
     stopwatchHistory.splice(index, 1);
     syncHistoryToPython();
     renderDashboard();
