@@ -1,5 +1,8 @@
 // State variables
 let use24Hour = true;
+let currentTheme = 'dark';
+let currentSkin = 'retro';
+let isAutostart = false;
 
 // Centralized Logger Helper to bridge messages to Python backend log
 function logToBackend(level, message) {
@@ -353,12 +356,22 @@ function updateControlButtonsUI() {
 // API methods exposed to Python
 window.setTheme = function(themeName) {
   logToBackend('DEBUG', `Received theme change: ${themeName}`);
-  document.body.className = ''; // Reset
+  currentTheme = themeName;
+  // Remove old theme classes
+  document.body.classList.remove('theme-mint', 'theme-neon', 'theme-amber', 'theme-sakura', 'theme-forest', 'theme-cyberpunk');
   if (themeName !== 'dark') { // Treat dark (monochromatic) as default root theme
     document.body.classList.add(`theme-${themeName}`);
   }
-  // Keep active mode class
-  document.body.classList.add(`mode-${currentMode}`);
+  
+  // Highlight active theme dot in overlay grid
+  document.querySelectorAll('.theme-dot').forEach(dot => {
+    if (dot.getAttribute('data-theme') === themeName) {
+      dot.classList.add('active');
+    } else {
+      dot.classList.remove('active');
+    }
+  });
+
   updateSecondsVisibilityClass();
   setTimeout(window.resizeWindow, 100);
 };
@@ -370,12 +383,20 @@ window.setScale = function(scaleValue) {
 
 window.setFormat = function(is24H) {
   use24Hour = is24H;
+  const cb = document.getElementById('setting-24h');
+  if (cb) {
+    cb.checked = is24H;
+  }
   tick(); // Force refresh digits immediately
 };
 
 window.setShowSeconds = function(visible) {
   showSeconds = visible;
   updateSecondsVisibilityClass();
+  const cb = document.getElementById('setting-seconds');
+  if (cb) {
+    cb.checked = visible;
+  }
   tick();
   setTimeout(window.resizeWindow, 100);
 };
@@ -386,6 +407,10 @@ window.setLocked = function(locked) {
     dragHint.classList.remove('visible');
   } else {
     dragHint.classList.add('visible');
+  }
+  const cb = document.getElementById('setting-lock');
+  if (cb) {
+    cb.checked = locked;
   }
 };
 
@@ -592,6 +617,7 @@ initScrollAdjustments();
 initWindowControls();
 initModeSelector();
 initSlider();
+initSettingsOverlay();
 
 function updateRunningClasses() {
   document.body.classList.toggle('timer-running', timerRunning);
@@ -896,4 +922,183 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+window.setSkin = function(skinName) {
+  logToBackend('DEBUG', `Received skin change: ${skinName}`);
+  // Remove old skin classes
+  document.body.classList.remove('skin-retro', 'skin-hologram', 'skin-nixie', 'skin-minimal');
+  // Add new skin class
+  document.body.classList.add(`skin-${skinName}`);
+  currentSkin = skinName;
+  
+  // Highlight active skin in overlay grid
+  document.querySelectorAll('.skin-card').forEach(card => {
+    if (card.getAttribute('data-skin') === skinName) {
+      card.classList.add('active');
+    } else {
+      card.classList.remove('active');
+    }
+  });
+  
+  setTimeout(window.resizeWindow, 100);
+};
+
+window.setAutostart = function(enabled) {
+  logToBackend('DEBUG', `Received autostart update: ${enabled}`);
+  isAutostart = enabled;
+  const cb = document.getElementById('setting-autostart');
+  if (cb) {
+    cb.checked = enabled;
+  }
+};
+
+function initSettingsOverlay() {
+  const btnSettings = document.getElementById('btn-settings');
+  const btnCloseSettings = document.getElementById('btn-close-settings');
+  const settingsOverlay = document.getElementById('settings-overlay');
+
+  if (btnSettings && settingsOverlay) {
+    btnSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      settingsOverlay.classList.toggle('visible');
+      syncSettingsUI();
+    });
+  }
+
+  if (btnCloseSettings && settingsOverlay) {
+    btnCloseSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      settingsOverlay.classList.remove('visible');
+    });
+  }
+
+  // Click outside to close settings overlay
+  document.addEventListener('click', (e) => {
+    if (settingsOverlay && settingsOverlay.classList.contains('visible')) {
+      if (!settingsOverlay.contains(e.target) && e.target !== btnSettings) {
+        settingsOverlay.classList.remove('visible');
+      }
+    }
+  });
+
+  // Bind checkbox changes to Python IPC
+  const lockCb = document.getElementById('setting-lock');
+  if (lockCb) {
+    lockCb.addEventListener('change', (e) => {
+      const val = e.target.checked;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
+        window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({
+          action: 'toggle_lock',
+          value: val
+        }));
+      } else {
+        window.setLocked(val);
+      }
+    });
+  }
+
+  const formatCb = document.getElementById('setting-24h');
+  if (formatCb) {
+    formatCb.addEventListener('change', (e) => {
+      const val = e.target.checked;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
+        window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({
+          action: 'toggle_format',
+          value: val
+        }));
+      } else {
+        window.setFormat(val);
+      }
+    });
+  }
+
+  const secondsCb = document.getElementById('setting-seconds');
+  if (secondsCb) {
+    secondsCb.addEventListener('change', (e) => {
+      const val = e.target.checked;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
+        window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({
+          action: 'toggle_seconds',
+          value: val
+        }));
+      } else {
+        window.setShowSeconds(val);
+      }
+    });
+  }
+
+  const autostartCb = document.getElementById('setting-autostart');
+  if (autostartCb) {
+    autostartCb.addEventListener('change', (e) => {
+      const val = e.target.checked;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
+        window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({
+          action: 'toggle_autostart',
+          value: val
+        }));
+      } else {
+        window.setAutostart(val);
+      }
+    });
+  }
+
+  // Bind theme dot clicks
+  document.querySelectorAll('.theme-dot').forEach(dot => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const theme = dot.getAttribute('data-theme');
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.window_control) {
+        window.webkit.messageHandlers.window_control.postMessage(JSON.stringify({
+          action: 'toggle_theme',
+          value: theme
+        }));
+      } else {
+        window.setTheme(theme);
+      }
+    });
+  });
+
+  // Bind skin card clicks
+  document.querySelectorAll('.skin-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const skin = card.getAttribute('data-skin');
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.update_skin) {
+        window.webkit.messageHandlers.update_skin.postMessage(skin);
+      } else {
+        window.setSkin(skin);
+      }
+    });
+  });
+}
+
+function syncSettingsUI() {
+  const lockCb = document.getElementById('setting-lock');
+  if (lockCb) lockCb.checked = isLocked;
+
+  const formatCb = document.getElementById('setting-24h');
+  if (formatCb) formatCb.checked = use24Hour;
+
+  const secondsCb = document.getElementById('setting-seconds');
+  if (secondsCb) secondsCb.checked = showSeconds;
+
+  const autostartCb = document.getElementById('setting-autostart');
+  if (autostartCb) autostartCb.checked = isAutostart;
+
+  document.querySelectorAll('.theme-dot').forEach(dot => {
+    if (dot.getAttribute('data-theme') === currentTheme) {
+      dot.classList.add('active');
+    } else {
+      dot.classList.remove('active');
+    }
+  });
+
+  document.querySelectorAll('.skin-card').forEach(card => {
+    if (card.getAttribute('data-skin') === currentSkin) {
+      card.classList.add('active');
+    } else {
+      card.classList.remove('active');
+    }
+  });
 }

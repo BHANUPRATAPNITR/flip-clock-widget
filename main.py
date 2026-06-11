@@ -57,7 +57,8 @@ DEFAULT_CONFIG = {
     "autostart": False,
     "mode": "clock",
     "label": "",
-    "stopwatch_history": []
+    "stopwatch_history": [],
+    "skin": "retro"
 }
 
 class FlipClockWidget:
@@ -171,6 +172,10 @@ class FlipClockWidget:
         # Log bridge for debugging
         manager.register_script_message_handler("log")
         manager.connect("script-message-received::log", self.on_js_log)
+
+        # Skin update handler
+        manager.register_script_message_handler("update_skin")
+        manager.connect("script-message-received::update_skin", self.on_js_update_skin)
 
         # Intercept context menu to show native GTK menu instead of browser menu
         self.webview.connect("context-menu", self.on_context_menu)
@@ -336,6 +341,22 @@ class FlipClockWidget:
         except Exception as e:
             print(f"Error saving mode update: {e}")
 
+    def on_js_update_skin(self, manager, js_result):
+        try:
+            skin_name = js_result.get_js_value().to_string()
+            try:
+                skin_name = json.loads(skin_name)
+            except Exception:
+                pass
+            if self.config.get("skin") != skin_name:
+                self.config["skin"] = skin_name
+                self.save_config()
+                logging.info(f"Card skin updated to: {skin_name}")
+                # Sync back to main WebView to be safe
+                self.webview.run_javascript(f"setSkin('{skin_name}')", None, None, None)
+        except Exception as e:
+            logging.error(f"Error saving skin update from JS: {e}")
+
     def on_js_window_control(self, manager, js_result):
         try:
             data = json.loads(js_result.get_js_value().to_string())
@@ -349,8 +370,43 @@ class FlipClockWidget:
                     self.window.maximize()
             elif action == "close":
                 Gtk.main_quit()
+            elif action == "toggle_lock":
+                val = bool(data.get("value", False))
+                self.config["locked"] = val
+                self.save_config()
+                self.webview.run_javascript(f"setLocked({str(val).lower()})", None, None, None)
+                logging.info(f"[IPC] Position locking toggled to: {val}")
+            elif action == "toggle_format":
+                val = bool(data.get("value", True))
+                self.config["use_24h"] = val
+                self.save_config()
+                self.webview.run_javascript(f"setFormat({str(val).lower()})", None, None, None)
+                logging.info(f"[IPC] 24-hour format toggled to: {val}")
+            elif action == "toggle_seconds":
+                val = bool(data.get("value", True))
+                self.config["show_seconds"] = val
+                self.save_config()
+                self.webview.run_javascript(f"setShowSeconds({str(val).lower()})", None, None, None)
+                logging.info(f"[IPC] Seconds visibility toggled to: {val}")
+            elif action == "toggle_autostart":
+                val = bool(data.get("value", False))
+                self.config["autostart"] = val
+                self.save_config()
+                if val:
+                    self.enable_autostart()
+                else:
+                    self.disable_autostart()
+                logging.info(f"[IPC] Autostart toggled to: {val}")
+            elif action == "toggle_theme":
+                theme_name = data.get("value")
+                self.config["theme"] = theme_name
+                self.save_config()
+                self.webview.run_javascript(f"setTheme('{theme_name}')", None, None, None)
+                if self.history_window is not None and self.history_webview is not None:
+                    self.history_webview.run_javascript(f"setTheme('{theme_name}')", None, None, None)
+                logging.info(f"[IPC] Theme updated to: {theme_name}")
         except Exception as e:
-            print(f"Error handling window control: {e}")
+            logging.error(f"Error handling window control: {e}")
 
     def on_js_update_history(self, manager, js_result):
         try:
@@ -487,6 +543,8 @@ class FlipClockWidget:
         self.webview.run_javascript(f"setMode('{self.config['mode']}')", None, None, None)
         self.webview.run_javascript(f"setLabel({json.dumps(self.config['label'])})", None, None, None)
         self.webview.run_javascript(f"setStopwatchHistory({json.dumps(self.config.get('stopwatch_history', []))})", None, None, None)
+        self.webview.run_javascript(f"setSkin('{self.config.get('skin', 'retro')}')", None, None, None)
+        self.webview.run_javascript(f"setAutostart({str(self.config['autostart']).lower()})", None, None, None)
         
         # Trigger JS size calculation
         self.webview.run_javascript("resizeWindow()", None, None, None)
@@ -583,7 +641,15 @@ class FlipClockWidget:
 
         # Submenu: Theme selection
         theme_menu = Gtk.Menu()
-        themes = [("Mint Green", "mint"), ("Sleek Dark", "dark"), ("Cyber Neon", "neon"), ("Retro Amber", "amber")]
+        themes = [
+            ("Mint Green", "mint"), 
+            ("Sleek Dark", "dark"), 
+            ("Cyber Neon", "neon"), 
+            ("Retro Amber", "amber"),
+            ("Sakura Pink", "sakura"),
+            ("Forest Green", "forest"),
+            ("Cyberpunk Yellow", "cyberpunk")
+        ]
         group = None
         for label, val in themes:
             theme_item = Gtk.RadioMenuItem(label=label, group=group)
@@ -597,6 +663,28 @@ class FlipClockWidget:
         theme_root = Gtk.MenuItem(label="Themes")
         theme_root.set_submenu(theme_menu)
         menu.append(theme_root)
+
+        # Submenu: Skin selection
+        skin_menu = Gtk.Menu()
+        skins = [
+            ("Retro Flip", "retro"), 
+            ("Cyber Hologram", "hologram"), 
+            ("Nixie Glow", "nixie"), 
+            ("Minimal Flat", "minimal")
+        ]
+        skin_group = None
+        for label, val in skins:
+            skin_item = Gtk.RadioMenuItem(label=label, group=skin_group)
+            if skin_group is None:
+                skin_group = skin_item
+            if val == self.config.get("skin", "retro"):
+                skin_item.set_active(True)
+            skin_item.connect("activate", self.set_skin, val)
+            skin_menu.append(skin_item)
+            
+        skin_root = Gtk.MenuItem(label="Skins")
+        skin_root.set_submenu(skin_menu)
+        menu.append(skin_root)
 
         # Submenu: Size Selection
         scale_menu = Gtk.Menu()
@@ -667,6 +755,13 @@ class FlipClockWidget:
             self.webview.run_javascript(f"setTheme('{theme_name}')", None, None, None)
             if self.history_window is not None and self.history_webview is not None:
                 self.history_webview.run_javascript(f"setTheme('{theme_name}')", None, None, None)
+
+    def set_skin(self, item, skin_name):
+        if item.get_active():
+            self.config["skin"] = skin_name
+            self.save_config()
+            logging.info(f"[GTK Menu] Skin selected: {skin_name}")
+            self.webview.run_javascript(f"setSkin('{skin_name}')", None, None, None)
 
     def set_scale(self, item, scale_val):
         if item.get_active():
