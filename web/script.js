@@ -38,13 +38,31 @@ let currentDigits = {
 
 // Timer / Stopwatch state
 let currentMode = "clock"; // "clock" | "stopwatch" | "timer"
-let stopwatchSeconds = 0;
+
+// Wall-clock accurate timing states
+let stopwatchStartTime = null;
+let stopwatchAccumulatedMs = 0;
 let stopwatchRunning = false;
 
 let timerDurationMinutes = 5; // Default 5 minutes
-let timerSecondsRemaining = 300;
+let timerEndTime = null; // target performance.now() timestamp
+let timerSecondsRemaining = 300; // stored remaining seconds when paused
 let timerRunning = false;
 let timerFinished = false;
+
+function getStopwatchSeconds() {
+  if (stopwatchRunning && stopwatchStartTime !== null) {
+    return Math.floor((performance.now() - stopwatchStartTime + stopwatchAccumulatedMs) / 1000);
+  }
+  return Math.floor(stopwatchAccumulatedMs / 1000);
+}
+
+function getTimerSecondsRemaining() {
+  if (timerRunning && timerEndTime !== null) {
+    return Math.max(0, Math.ceil((timerEndTime - performance.now()) / 1000));
+  }
+  return timerSecondsRemaining;
+}
 
 // Slider drag state tracking
 let activeDragSliders = { hours: false, minutes: false, seconds: false };
@@ -170,8 +188,9 @@ function flipCard(cardKey, newValue) {
 
   const oldValue = currentDigits[cardKey];
   
-  // If the value hasn't changed or it's the first run, set directly without flip
-  if (oldValue === null) {
+  // If the value hasn't changed or it's the first run, or if the user prefers reduced motion, set directly without flip
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (oldValue === null || prefersReducedMotion) {
     card.querySelectorAll('span').forEach(span => span.textContent = newValue);
     currentDigits[cardKey] = newValue;
     return;
@@ -183,6 +202,12 @@ function flipCard(cardKey, newValue) {
   if (card.timeoutId) {
     clearTimeout(card.timeoutId);
     card.classList.remove('flipping');
+    // Finalize previous target digit text immediately before next transition
+    const prevTarget = currentDigits[cardKey];
+    if (prevTarget !== null) {
+      card.querySelector('.top-front span').textContent = prevTarget;
+      card.querySelector('.bottom-back span').textContent = prevTarget;
+    }
   }
 
   const topBack = card.querySelector('.top-back span');
@@ -256,13 +281,10 @@ function tick() {
       dateDisplay.textContent = dateStr;
     }
   } else if (currentMode === 'stopwatch') {
-    if (stopwatchRunning) {
-      stopwatchSeconds++;
-    }
-    
-    const h = Math.floor(stopwatchSeconds / 3600);
-    const m = Math.floor((stopwatchSeconds % 3600) / 60);
-    const s = stopwatchSeconds % 60;
+    const swSecs = getStopwatchSeconds();
+    const h = Math.floor(swSecs / 3600);
+    const m = Math.floor((swSecs % 3600) / 60);
+    const s = swSecs % 60;
     
     renderTime(h, m, s);
 
@@ -272,11 +294,13 @@ function tick() {
       dateDisplay.textContent = `Stopwatch - ${stopwatchRunning ? 'Running' : 'Paused'}`;
     }
   } else if (currentMode === 'timer') {
-    if (timerRunning && timerSecondsRemaining > 0) {
-      timerSecondsRemaining--;
-      if (timerSecondsRemaining === 0) {
+    if (timerRunning) {
+      const remaining = getTimerSecondsRemaining();
+      if (remaining <= 0) {
         timerRunning = false;
         timerFinished = true;
+        timerSecondsRemaining = 0;
+        timerEndTime = null;
         document.body.classList.add('timer-alert-active');
         updateControlButtonsUI();
         updateRunningClasses();
@@ -291,9 +315,10 @@ function tick() {
       }
     }
 
-    const h = Math.floor(timerSecondsRemaining / 3600);
-    const m = Math.floor((timerSecondsRemaining % 3600) / 60);
-    const s = timerSecondsRemaining % 60;
+    const currentRemaining = getTimerSecondsRemaining();
+    const h = Math.floor(currentRemaining / 3600);
+    const m = Math.floor((currentRemaining % 3600) / 60);
+    const s = currentRemaining % 60;
 
     renderTime(h, m, s);
 
@@ -458,12 +483,26 @@ window.setMode = function(modeName) {
 window.toggleTimerState = function() {
   if (currentMode === 'stopwatch') {
     stopwatchRunning = !stopwatchRunning;
+    if (stopwatchRunning) {
+      stopwatchStartTime = performance.now();
+    } else {
+      if (stopwatchStartTime !== null) {
+        stopwatchAccumulatedMs += performance.now() - stopwatchStartTime;
+      }
+      stopwatchStartTime = null;
+    }
     logToBackend('INFO', `Stopwatch toggled. Running = ${stopwatchRunning}`);
   } else if (currentMode === 'timer') {
     if (timerFinished) {
       window.resetTimerState();
     }
     timerRunning = !timerRunning;
+    if (timerRunning) {
+      timerEndTime = performance.now() + (timerSecondsRemaining * 1000);
+    } else {
+      timerSecondsRemaining = getTimerSecondsRemaining();
+      timerEndTime = null;
+    }
     logToBackend('INFO', `Timer toggled. Running = ${timerRunning}`);
   }
   updateControlButtonsUI();
@@ -476,15 +515,17 @@ window.resetTimerState = function() {
   document.body.classList.remove('timer-alert-active');
   if (currentMode === 'stopwatch') {
     stopwatchRunning = false;
-    stopwatchSeconds = 0;
+    stopwatchStartTime = null;
+    stopwatchAccumulatedMs = 0;
   } else if (currentMode === 'timer') {
     timerRunning = false;
     timerFinished = false;
     timerSecondsRemaining = timerDurationMinutes * 60;
+    timerEndTime = null;
   }
   
   // Clear flip cache to reset cards cleanly
-  currentDigits = { h1: null, h2: null, m1: null, m2: null, s1: null, s2: null };
+  resetCardDigits();
   updateControlButtonsUI();
   updateRunningClasses();
   syncSliderPosition();
@@ -595,14 +636,18 @@ function initScrollAdjustments() {
 }
 
 function adjustTimerDuration(secondsDelta) {
-  let newSeconds = timerSecondsRemaining + secondsDelta;
+  let activeRemaining = getTimerSecondsRemaining();
+  let newSeconds = activeRemaining + secondsDelta;
   if (newSeconds < 5) newSeconds = 5;
   if (newSeconds > 86399) newSeconds = 86399;
   
   timerSecondsRemaining = newSeconds;
+  if (timerRunning && timerEndTime !== null) {
+    timerEndTime = performance.now() + (newSeconds * 1000);
+  }
   timerDurationMinutes = Math.round(newSeconds / 60) || 1;
   
-  currentDigits = { h1: null, h2: null, m1: null, m2: null, s1: null, s2: null };
+  resetCardDigits();
   updateControlButtonsUI();
   tick();
 }
@@ -626,15 +671,16 @@ function updateRunningClasses() {
 
 function syncSliderPosition() {
   if (currentMode !== 'timer' || timerRunning) return;
+  const currentRemaining = getTimerSecondsRemaining();
 
   const knobHours = document.getElementById('slider-knob-hours');
   const knobMinutes = document.getElementById('slider-knob-minutes');
   const knobSeconds = document.getElementById('slider-knob-seconds');
   if (!knobHours || !knobMinutes || !knobSeconds) return;
 
-  const h = Math.floor(timerSecondsRemaining / 3600);
-  const m = Math.floor((timerSecondsRemaining % 3600) / 60);
-  const s = timerSecondsRemaining % 60;
+  const h = Math.floor(currentRemaining / 3600);
+  const m = Math.floor((currentRemaining % 3600) / 60);
+  const s = currentRemaining % 60;
 
   const maxTravel = 120; // 140px track - 20px knob
 
@@ -681,10 +727,11 @@ function initSliderComponent(type, knobId, trackId, maxValue) {
     knob.style.bottom = `${yFromBottom}px`;
     
     const unitValue = Math.round((yFromBottom / maxTravel) * maxValue);
+    const currentRemaining = getTimerSecondsRemaining();
     
-    const h = Math.floor(timerSecondsRemaining / 3600);
-    const m = Math.floor((timerSecondsRemaining % 3600) / 60);
-    const s = timerSecondsRemaining % 60;
+    const h = Math.floor(currentRemaining / 3600);
+    const m = Math.floor((currentRemaining % 3600) / 60);
+    const s = currentRemaining % 60;
     
     let newH = h;
     let newM = m;
@@ -696,10 +743,13 @@ function initSliderComponent(type, knobId, trackId, maxValue) {
     
     const newTotalSeconds = (newH * 3600) + (newM * 60) + newS;
     
-    if (newTotalSeconds >= 5 && timerSecondsRemaining !== newTotalSeconds) {
+    if (newTotalSeconds >= 5 && currentRemaining !== newTotalSeconds) {
       timerSecondsRemaining = newTotalSeconds;
+      if (timerRunning && timerEndTime !== null) {
+        timerEndTime = performance.now() + (newTotalSeconds * 1000);
+      }
       timerDurationMinutes = Math.round(newTotalSeconds / 60) || 1;
-      currentDigits = { h1: null, h2: null, m1: null, m2: null, s1: null, s2: null };
+      resetCardDigits();
       tick();
     }
   }
@@ -805,15 +855,25 @@ window.addEventListener('blur', () => {
   isMouseDown = false;
 });
 
-window.setStopwatchHistory = function(historyArray) {
-  stopwatchHistory = historyArray || [];
-  renderHistory();
-};
+function resetCardDigits() {
+  currentDigits = { h1: null, h2: null, m1: null, m2: null, s1: null, s2: null };
+  for (const key in cards) {
+    const card = cards[key];
+    if (card) {
+      if (card.timeoutId) {
+        clearTimeout(card.timeoutId);
+        card.timeoutId = null;
+      }
+      card.classList.remove('flipping');
+    }
+  }
+}
 
 function recordStopwatchSession() {
-  const h = Math.floor(stopwatchSeconds / 3600);
-  const m = Math.floor((stopwatchSeconds % 3600) / 60);
-  const s = stopwatchSeconds % 60;
+  const swSecs = getStopwatchSeconds();
+  const h = Math.floor(swSecs / 3600);
+  const m = Math.floor((swSecs % 3600) / 60);
+  const s = swSecs % 60;
   const formattedTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 
   const labelVal = widgetLabel.textContent.trim();
@@ -923,6 +983,11 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+window.setStopwatchHistory = function(historyArray) {
+  stopwatchHistory = historyArray || [];
+  renderHistory();
+};
 
 window.setSkin = function(skinName) {
   logToBackend('DEBUG', `Received skin change: ${skinName}`);
