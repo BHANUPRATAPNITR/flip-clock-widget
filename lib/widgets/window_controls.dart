@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/window.dart';
+import '../core/providers.dart';
 
-class WindowControls extends StatefulWidget {
-  final Color dateTextColor;
-  const WindowControls({super.key, required this.dateTextColor});
+class WindowControls extends ConsumerStatefulWidget {
+  const WindowControls({super.key});
 
   @override
-  State<WindowControls> createState() => _WindowControlsState();
+  ConsumerState<WindowControls> createState() => _WindowControlsState();
 }
 
-class _WindowControlsState extends State<WindowControls> {
+class _WindowControlsState extends ConsumerState<WindowControls> {
   bool _groupHovered = false;
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(settingsProvider);
     return MouseRegion(
       onEnter: (_) => setState(() => _groupHovered = true),
       onExit: (_) => setState(() => _groupHovered = false),

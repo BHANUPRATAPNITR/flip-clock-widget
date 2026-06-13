@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../core/theme.dart';
-import '../state/clock_state.dart';
+import '../core/providers.dart';
+import '../core/config.dart';
+import '../features/stopwatch/stopwatch_state.dart';
+import '../features/timer/timer_state.dart';
 import '../services/window.dart';
 import '../widgets/window_controls.dart';
 import '../widgets/flip_card.dart';
@@ -10,15 +14,14 @@ import '../widgets/vertical_slider.dart';
 import '../widgets/settings_panel.dart';
 import '../core/logger.dart';
 
-class MainView extends StatefulWidget {
-  final ClockState state;
-  const MainView({super.key, required this.state});
+class MainView extends ConsumerStatefulWidget {
+  const MainView({super.key});
 
   @override
-  State<MainView> createState() => _MainViewState();
+  ConsumerState<MainView> createState() => _MainViewState();
 }
 
-class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin {
+class _MainViewState extends ConsumerState<MainView> with SingleTickerProviderStateMixin {
   bool _isHovered = false;
   bool _showSettings = false;
   late TextEditingController _labelController;
@@ -30,13 +33,13 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
-    final state = widget.state;
-    _labelController = TextEditingController(text: state.config.label);
+    final config = ref.read(settingsProvider);
+    _labelController = TextEditingController(text: config.label);
     _labelFocusNode = FocusNode();
     
     _labelFocusNode.addListener(() {
       if (!_labelFocusNode.hasFocus) {
-        state.updateLabel(_labelController.text);
+        ref.read(settingsProvider.notifier).updateLabel(_labelController.text);
       }
     });
 
@@ -70,13 +73,30 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
     }
   }
 
+  void _switchMode(String newMode, AppConfig settingsState, TimerState timerState) {
+    if (settingsState.mode == newMode) return;
+    if (newMode != "timer" && timerState.timerAlertActive) {
+      ref.read(timerProvider.notifier).silenceAlert();
+    }
+    ref.read(settingsProvider.notifier).switchMode(newMode);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final state = widget.state;
-    final theme = ThemeConfig.get(state.config.theme);
+    final settingsState = ref.watch(settingsProvider);
+    final clockState = ref.watch(clockProvider);
+    final stopwatchState = ref.watch(stopwatchProvider);
+    final timerState = ref.watch(timerProvider);
+    
+    final theme = ThemeConfig.get(settingsState.theme);
+
+    // Update label text if changed externally and not currently focused
+    if (!_labelFocusNode.hasFocus && _labelController.text != settingsState.label) {
+      _labelController.text = settingsState.label;
+    }
     
     // Manage alarm animation status
-    if (state.timerAlertActive) {
+    if (timerState.timerAlertActive) {
       if (!_alarmAnimationController!.isAnimating) {
         _alarmAnimationController!.forward();
       }
@@ -92,18 +112,18 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
     int displayMinutes = 0;
     int displaySeconds = 0;
 
-    if (state.config.mode == "clock") {
-      final hourVal = state.config.use24h ? state.now.hour : (state.now.hour % 12 == 0 ? 12 : state.now.hour % 12);
+    if (settingsState.mode == "clock") {
+      final hourVal = settingsState.use24h ? clockState.hour : (clockState.hour % 12 == 0 ? 12 : clockState.hour % 12);
       displayHours = hourVal;
-      displayMinutes = state.now.minute;
-      displaySeconds = state.now.second;
-    } else if (state.config.mode == "stopwatch") {
-      final totalSecs = state.stopwatchElapsed;
+      displayMinutes = clockState.minute;
+      displaySeconds = clockState.second;
+    } else if (settingsState.mode == "stopwatch") {
+      final totalSecs = stopwatchState.stopwatchElapsedSeconds;
       displayHours = totalSecs ~/ 3600;
       displayMinutes = (totalSecs % 3600) ~/ 60;
       displaySeconds = totalSecs % 60;
-    } else if (state.config.mode == "timer") {
-      final totalSecs = state.timerRemaining;
+    } else if (settingsState.mode == "timer") {
+      final totalSecs = timerState.timerRemainingSeconds;
       displayHours = totalSecs ~/ 3600;
       displayMinutes = (totalSecs % 3600) ~/ 60;
       displaySeconds = totalSecs % 60;
@@ -118,11 +138,11 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
           alignment: Alignment.center,
           children: [
             // Silencer Click Overlay when alert is active
-            if (state.timerAlertActive)
+            if (timerState.timerAlertActive)
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () {
-                    state.silenceAlert();
+                    ref.read(timerProvider.notifier).silenceAlert();
                   },
                   child: Container(
                     color: Colors.transparent,
@@ -133,18 +153,18 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
             // Main Widget Container
             GestureDetector(
               onPanStart: (_) {
-                if (!state.config.locked) {
+                if (!settingsState.locked) {
                   // If alarm is active, clicking anywhere silences it
-                  if (state.timerAlertActive) {
-                    state.silenceAlert();
+                  if (timerState.timerAlertActive) {
+                    ref.read(timerProvider.notifier).silenceAlert();
                   } else {
                     WindowService.startDragging();
                   }
                 }
               },
               onTap: () {
-                if (state.timerAlertActive) {
-                  state.silenceAlert();
+                if (timerState.timerAlertActive) {
+                  ref.read(timerProvider.notifier).silenceAlert();
                 }
               },
               child: AnimatedBuilder(
@@ -155,13 +175,13 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                   // Compute flashing alarm color
                   final baseBgColor = theme.glassBgColor.withOpacity(0.88);
                   final alertBgColor = const Color(0xFFE53935).withOpacity(0.16); // red alert
-                  final currentBgColor = state.timerAlertActive
+                  final currentBgColor = timerState.timerAlertActive
                       ? Color.lerp(baseBgColor, alertBgColor, alertOpacity)!
                       : baseBgColor;
 
                   final baseBorderColor = theme.glassBorderColor.withOpacity(0.3);
                   final alertBorderColor = const Color(0xFFE53935).withOpacity(0.45);
-                  final currentBorderColor = state.timerAlertActive
+                  final currentBorderColor = timerState.timerAlertActive
                       ? Color.lerp(baseBorderColor, alertBorderColor, alertOpacity)!
                       : baseBorderColor;
 
@@ -176,11 +196,11 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: state.timerAlertActive
+                          color: timerState.timerAlertActive
                               ? const Color(0xFFE53935).withOpacity(0.4 * alertOpacity)
                               : Colors.black.withOpacity(0.4),
-                          blurRadius: state.timerAlertActive ? 30.0 : 48.0,
-                          spreadRadius: state.timerAlertActive ? 4.0 : -8.0,
+                          blurRadius: timerState.timerAlertActive ? 30.0 : 48.0,
+                          spreadRadius: timerState.timerAlertActive ? 4.0 : -8.0,
                         ),
                         BoxShadow(
                           color: theme.shadowGlowColor.withOpacity(0.12),
@@ -198,20 +218,20 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                         _buildLabelInput(theme),
                         
                         // Mode Selector Tab Bar
-                        _buildModeSelector(state, theme),
+                        _buildModeSelector(settingsState, timerState, theme),
                         
                         // Digits display + sliders
-                        _buildDigitsContainer(state, theme, displayHours, displayMinutes, displaySeconds),
+                        _buildDigitsContainer(settingsState, timerState, theme, displayHours, displayMinutes, displaySeconds),
                         
                         // Action Controls Bar
-                        _buildActionControls(state, theme),
+                        _buildActionControls(settingsState, stopwatchState, timerState, theme),
                         
                         // Date displays or stopwatch running hint
                         const SizedBox(height: 16),
-                        _buildFooterText(state),
+                        _buildFooterText(settingsState, clockState, stopwatchState, timerState),
                         
                         // Drag Hint
-                        _buildDragHint(state),
+                        _buildDragHint(settingsState),
                       ],
                     ),
                   );
@@ -226,7 +246,7 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: _isHovered ? 1.0 : 0.0,
-                child: WindowControls(dateTextColor: theme.dateTextColor),
+                child: const WindowControls(),
               ),
             ),
 
@@ -235,7 +255,6 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
               Positioned.fill(
                 child: Center(
                   child: SettingsPanel(
-                    state: state,
                     onClose: () => setState(() => _showSettings = false),
                   ),
                 ),
@@ -292,7 +311,7 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildModeSelector(ClockState state, ThemeConfig theme) {
+  Widget _buildModeSelector(AppConfig settingsState, TimerState timerState, ThemeConfig theme) {
     final modes = ["clock", "stopwatch", "timer"];
     final labels = ["Clock", "Stopwatch", "Timer"];
 
@@ -307,10 +326,10 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: List.generate(modes.length, (idx) {
-          final isSelected = state.config.mode == modes[idx];
+          final isSelected = settingsState.mode == modes[idx];
           return GestureDetector(
             onTap: () {
-              state.switchMode(modes[idx]);
+              _switchMode(modes[idx], settingsState, timerState);
             },
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
@@ -342,14 +361,15 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
   }
 
   Widget _buildDigitsContainer(
-    ClockState state,
+    AppConfig settingsState,
+    TimerState timerState,
     ThemeConfig theme,
     int hours,
     int minutes,
     int seconds,
   ) {
-    final showSeconds = state.config.showSeconds || state.config.mode == "stopwatch" || state.config.mode == "timer";
-    final isTimerPaused = state.config.mode == "timer" && !state.timerRunning;
+    final showSeconds = settingsState.showSeconds || settingsState.mode == "stopwatch" || settingsState.mode == "timer";
+    final isTimerPaused = settingsState.mode == "timer" && !timerState.timerRunning;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -362,10 +382,10 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
             FlipCardGroup(
               value: hours,
               label: "Hours",
-              skin: state.config.skin,
+              skin: settingsState.skin,
               theme: theme,
               isInteractive: isTimerPaused,
-              onScroll: (dir) => state.addTimerSeconds(dir * 3600),
+              onScroll: (dir) => ref.read(timerProvider.notifier).addTimerSeconds(dir * 3600),
             ),
             if (isTimerPaused)
               Positioned(
@@ -375,7 +395,7 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                   value: hours,
                   maxValue: 23,
                   theme: theme,
-                  onChanged: (val) => state.setTimerHours(val),
+                  onChanged: (val) => ref.read(timerProvider.notifier).setTimerHours(val),
                 ),
               ),
           ],
@@ -391,10 +411,10 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
             FlipCardGroup(
               value: minutes,
               label: "Minutes",
-              skin: state.config.skin,
+              skin: settingsState.skin,
               theme: theme,
               isInteractive: isTimerPaused,
-              onScroll: (dir) => state.addTimerSeconds(dir * 60),
+              onScroll: (dir) => ref.read(timerProvider.notifier).addTimerSeconds(dir * 60),
             ),
             if (isTimerPaused)
               Positioned(
@@ -404,7 +424,7 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                   value: minutes,
                   maxValue: 59,
                   theme: theme,
-                  onChanged: (val) => state.setTimerMinutes(val),
+                  onChanged: (val) => ref.read(timerProvider.notifier).setTimerMinutes(val),
                 ),
               ),
           ],
@@ -420,10 +440,10 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
               FlipCardGroup(
                 value: seconds,
                 label: "Seconds",
-                skin: state.config.skin,
+                skin: settingsState.skin,
                 theme: theme,
                 isInteractive: isTimerPaused,
-                onScroll: (dir) => state.addTimerSeconds(dir * 5),
+                onScroll: (dir) => ref.read(timerProvider.notifier).addTimerSeconds(dir * 5),
               ),
               if (isTimerPaused)
                 Positioned(
@@ -433,7 +453,7 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                     value: seconds,
                     maxValue: 59,
                     theme: theme,
-                    onChanged: (val) => state.setTimerSecondsValue(val),
+                    onChanged: (val) => ref.read(timerProvider.notifier).setTimerSecondsValue(val),
                   ),
                 ),
             ],
@@ -443,10 +463,15 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildActionControls(ClockState state, ThemeConfig theme) {
-    final isClockMode = state.config.mode == "clock";
-    final isTimer = state.config.mode == "timer";
-    final isStopwatch = state.config.mode == "stopwatch";
+  Widget _buildActionControls(
+    AppConfig settingsState,
+    StopwatchState stopwatchState,
+    TimerState timerState,
+    ThemeConfig theme,
+  ) {
+    final isClockMode = settingsState.mode == "clock";
+    final isTimer = settingsState.mode == "timer";
+    final isStopwatch = settingsState.mode == "stopwatch";
     
     // Controls container fades out in clock mode when not hovered
     final showControls = _isHovered || isTimer || isStopwatch;
@@ -468,14 +493,14 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
             // Play/Pause (Stopwatch/Timer)
             if (!isClockMode) ...[
               _buildControlButton(
-                icon: (isTimer && state.timerRunning) || (isStopwatch && state.stopwatchRunning)
+                icon: (isTimer && timerState.timerRunning) || (isStopwatch && stopwatchState.stopwatchRunning)
                     ? Icons.pause
                     : Icons.play_arrow,
                 onPressed: () {
                   if (isTimer) {
-                    state.toggleTimer();
+                    ref.read(timerProvider.notifier).toggleTimer();
                   } else if (isStopwatch) {
-                    state.toggleStopwatch();
+                    ref.read(stopwatchProvider.notifier).toggleStopwatch();
                   }
                 },
                 tooltip: "Play / Pause",
@@ -488,7 +513,7 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
               _buildControlButton(
                 icon: Icons.fiber_manual_record,
                 onPressed: () {
-                  state.recordStopwatchSession();
+                  ref.read(stopwatchProvider.notifier).recordStopwatchSession();
                 },
                 tooltip: "Record Session",
               ),
@@ -519,9 +544,9 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                 icon: Icons.replay,
                 onPressed: () {
                   if (isTimer) {
-                    state.resetTimer();
+                    ref.read(timerProvider.notifier).resetTimer();
                   } else if (isStopwatch) {
-                    state.resetStopwatch();
+                    ref.read(stopwatchProvider.notifier).resetStopwatch();
                   }
                 },
                 tooltip: "Reset",
@@ -537,11 +562,11 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
                 color: Colors.white10,
               ),
               const SizedBox(width: 12),
-              _buildPresetButton("1m", () => state.setTimerDuration(60)),
-              _buildPresetButton("5m", () => state.setTimerDuration(300)),
-              _buildPresetButton("15m", () => state.setTimerDuration(900)),
-              _buildPresetButton("25m", () => state.setTimerDuration(1500)),
-              _buildPresetButton("60m", () => state.setTimerDuration(3600)),
+              _buildPresetButton("1m", () => ref.read(timerProvider.notifier).setTimerDuration(60)),
+              _buildPresetButton("5m", () => ref.read(timerProvider.notifier).setTimerDuration(300)),
+              _buildPresetButton("15m", () => ref.read(timerProvider.notifier).setTimerDuration(900)),
+              _buildPresetButton("25m", () => ref.read(timerProvider.notifier).setTimerDuration(1500)),
+              _buildPresetButton("60m", () => ref.read(timerProvider.notifier).setTimerDuration(3600)),
             ],
           ],
         ),
@@ -595,36 +620,41 @@ class _MainViewState extends State<MainView> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildFooterText(ClockState state) {
-    if (state.config.mode == "clock") {
-      final formattedDate = DateFormat("EEEE, MMMM d, y").format(state.now);
+  Widget _buildFooterText(
+    AppConfig settingsState,
+    DateTime clockState,
+    StopwatchState stopwatchState,
+    TimerState timerState,
+  ) {
+    if (settingsState.mode == "clock") {
+      final formattedDate = DateFormat("EEEE, MMMM d, y").format(clockState);
       return Text(
         formattedDate,
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
           letterSpacing: 2.5,
-          color: ThemeConfig.get(state.config.theme).dateTextColor,
+          color: ThemeConfig.get(settingsState.theme).dateTextColor,
         ),
         textAlign: TextAlign.center,
       );
     } else {
-      final running = state.config.mode == "stopwatch" ? state.stopwatchRunning : state.timerRunning;
+      final running = settingsState.mode == "stopwatch" ? stopwatchState.stopwatchRunning : timerState.timerRunning;
       return Text(
-        "${state.config.mode.toUpperCase()} - ${running ? 'RUNNING' : 'PAUSED'}",
+        "${settingsState.mode.toUpperCase()} - ${running ? 'RUNNING' : 'PAUSED'}",
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           letterSpacing: 2.0,
-          color: ThemeConfig.get(state.config.theme).dateTextColor.withOpacity(0.8),
+          color: ThemeConfig.get(settingsState.theme).dateTextColor.withOpacity(0.8),
         ),
         textAlign: TextAlign.center,
       );
     }
   }
 
-  Widget _buildDragHint(ClockState state) {
-    final isLocked = state.config.locked;
+  Widget _buildDragHint(AppConfig settingsState) {
+    final isLocked = settingsState.locked;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(top: 10),

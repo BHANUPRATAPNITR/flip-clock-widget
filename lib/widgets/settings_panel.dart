@@ -1,21 +1,28 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/config.dart';
 import '../core/theme.dart';
-import '../state/clock_state.dart';
+import '../core/providers.dart';
 
-class SettingsPanel extends StatelessWidget {
-  final ClockState state;
+/// [SettingsPanel] is a glassmorphic overlay that allows users to customize clock preferences.
+///
+/// It is implemented as a [ConsumerWidget] to watch [settingsProvider] directly, ensuring that
+/// changes to stopwatch timing or clock second ticks do not cause redundant settings rebuilds.
+class SettingsPanel extends ConsumerWidget {
+  /// Callback function invoked when the user clicks the close icon button.
   final VoidCallback onClose;
 
   const SettingsPanel({
     super.key,
-    required this.state,
     required this.onClose,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final theme = ThemeConfig.get(state.config.theme);
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watches SettingsNotifier directly for configuration changes
+    final state = ref.watch(settingsProvider);
+    final theme = ThemeConfig.get(state.theme);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -58,7 +65,7 @@ class SettingsPanel extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               
-              // Body (Scrollable if necessary, but fits easily)
+              // Body (Scrollable settings list)
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(
@@ -68,23 +75,23 @@ class SettingsPanel extends StatelessWidget {
                       _buildSectionTitle("Preferences"),
                       _buildToggleRow(
                         label: "Lock Position",
-                        value: state.config.locked,
-                        onChanged: (val) => state.setLocked(val),
+                        value: state.locked,
+                        onChanged: (val) => ref.read(settingsProvider.notifier).setLocked(val),
                       ),
                       _buildToggleRow(
                         label: "24-Hour Format",
-                        value: state.config.use24h,
-                        onChanged: (val) => state.setUse24h(val),
+                        value: state.use24h,
+                        onChanged: (val) => ref.read(settingsProvider.notifier).setUse24h(val),
                       ),
                       _buildToggleRow(
                         label: "Show Seconds",
-                        value: state.config.showSeconds,
-                        onChanged: (val) => state.setShowSeconds(val),
+                        value: state.showSeconds,
+                        onChanged: (val) => ref.read(settingsProvider.notifier).setShowSeconds(val),
                       ),
                       _buildToggleRow(
                         label: "Start on Login",
-                        value: state.config.autostart,
-                        onChanged: (val) => state.setAutostart(val),
+                        value: state.autostart,
+                        onChanged: (val) => ref.read(settingsProvider.notifier).setAutostart(val),
                       ),
                       
                       const SizedBox(height: 16),
@@ -92,14 +99,14 @@ class SettingsPanel extends StatelessWidget {
                       // Section: Themes
                       _buildSectionTitle("Themes"),
                       const SizedBox(height: 8),
-                      _buildThemeSelector(),
+                      _buildThemeSelector(ref, state),
                       
                       const SizedBox(height: 20),
                       
                       // Section: Card Skins
                       _buildSectionTitle("Card Skins"),
                       const SizedBox(height: 8),
-                      _buildSkinSelector(theme),
+                      _buildSkinSelector(ref, theme, state),
                     ],
                   ),
                 ),
@@ -111,6 +118,7 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 
+  /// Builds standardized section headers.
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -126,6 +134,7 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 
+  /// Builds a toggle row with a label and switch control.
   Widget _buildToggleRow({
     required String label,
     required bool value,
@@ -157,7 +166,8 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildThemeSelector() {
+  /// Builds the theme selection dot palette grid.
+  Widget _buildThemeSelector(WidgetRef ref, AppConfig state) {
     final List<Map<String, dynamic>> themes = [
       {"id": "dark", "color": const Color(0xFFFFFFFF), "name": "Sleek Dark"},
       {"id": "mint", "color": const Color(0xFF87CF3E), "name": "Mint Green"},
@@ -172,11 +182,11 @@ class SettingsPanel extends StatelessWidget {
       spacing: 12,
       runSpacing: 12,
       children: themes.map((t) {
-        final isSelected = state.config.theme == t["id"];
+        final isSelected = state.theme == t["id"];
         return Tooltip(
           message: t["name"],
           child: GestureDetector(
-            onTap: () => state.setTheme(t["id"]),
+            onTap: () => ref.read(settingsProvider.notifier).setTheme(t["id"]),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: AnimatedContainer(
@@ -207,7 +217,8 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildSkinSelector(ThemeConfig activeTheme) {
+  /// Builds the card skins preview and selection grid.
+  Widget _buildSkinSelector(WidgetRef ref, ThemeConfig activeTheme, AppConfig state) {
     final List<Map<String, dynamic>> skins = [
       {"id": "retro", "name": "Retro Flip", "preview": Colors.black45},
       {"id": "hologram", "name": "Hologram", "preview": Colors.cyan.withOpacity(0.2)},
@@ -217,12 +228,12 @@ class SettingsPanel extends StatelessWidget {
 
     return Row(
       children: skins.map((s) {
-        final isSelected = state.config.skin == s["id"];
+        final isSelected = state.skin == s["id"];
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4.0),
             child: GestureDetector(
-              onTap: () => state.setSkin(s["id"]),
+              onTap: () => ref.read(settingsProvider.notifier).setSkin(s["id"]),
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: AnimatedContainer(

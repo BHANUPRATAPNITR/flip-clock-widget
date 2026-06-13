@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/logger.dart';
-import 'state/clock_state.dart';
 import 'services/window.dart';
 import 'screens/main_view.dart';
 import 'screens/history_view.dart';
@@ -29,27 +29,23 @@ void main(List<String> args) async {
   }
 }
 
-class FlipClockApp extends StatefulWidget {
+/// [FlipClockApp] is the root desktop widget application.
+/// It encapsulates the Riverpod [ProviderScope] internally to make it self-contained
+/// during local testing and deployment, avoiding "No ProviderScope found" errors.
+class FlipClockApp extends StatelessWidget {
   const FlipClockApp({super.key});
 
   @override
-  State<FlipClockApp> createState() => _FlipClockAppState();
+  Widget build(BuildContext context) {
+    return const ProviderScope(
+      child: FlipClockAppContent(),
+    );
+  }
 }
 
-class _FlipClockAppState extends State<FlipClockApp> {
-  late ClockState _state;
-
-  @override
-  void initState() {
-    super.initState();
-    _state = ClockState();
-  }
-
-  @override
-  void dispose() {
-    _state.dispose();
-    super.dispose();
-  }
+/// [FlipClockAppContent] boots up the [MainView] widget inside the MaterialApp context.
+class FlipClockAppContent extends StatelessWidget {
+  const FlipClockAppContent({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -60,29 +56,27 @@ class _FlipClockAppState extends State<FlipClockApp> {
         brightness: Brightness.dark,
         useMaterial3: true,
       ),
-      home: ListenableBuilder(
-        listenable: _state,
-        builder: (context, child) {
-          return MainView(state: _state);
-        },
-      ),
+      home: const MainView(),
     );
   }
 }
 
+/// [HistoryApp] boots up the standalone analytics list and bar chart viewer.
 class HistoryApp extends StatelessWidget {
   const HistoryApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Stopwatch History Analytics',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        useMaterial3: true,
+    return ProviderScope(
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'Stopwatch History Analytics',
+        theme: ThemeData(
+          brightness: Brightness.dark,
+          useMaterial3: true,
+        ),
+        home: const HistoryView(),
       ),
-      home: const HistoryView(),
     );
   }
 }

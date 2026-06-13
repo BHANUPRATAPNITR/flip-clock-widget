@@ -1,153 +1,144 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/logger.dart';
+import 'timer_state.dart';
 
-/// [TimerController] manages countdown timer logic, slider value mappings,
-/// and fires desktop notification triggers when the countdown expires.
-///
-/// In alignment with resource optimization objectives, the countdown ticker
-/// runs *only* when the timer is active (`_timerRunning == true`).
-class TimerController extends ChangeNotifier {
-  /// Remaining countdown duration in seconds. Default is 300s (5 minutes).
-  int _timerRemainingSeconds = 300;
-
-  /// Holds the initial starting time in seconds. Used during reset operations.
-  int _timerInitialSeconds = 300;
-
-  /// Track if the timer is actively counting down.
-  bool _timerRunning = false;
-
-  /// Active state of the full-screen flashing alert UI when the timer finishes.
-  bool _timerAlertActive = false;
-
-  /// System timestamp marking when the countdown segment started or resumed.
-  DateTime? _timerStartTime;
-
-  /// Accumulated seconds elapsed in previous segments before pause.
-  int _timerAccumulatedSeconds = 0;
-
-  /// Periodical timer checking second shifts.
+/// [TimerNotifier] manages countdown duration properties, slide operations,
+/// and executes CLI-level notifications when timing expires as a Riverpod [Notifier].
+class TimerNotifier extends Notifier<TimerState> {
+  /// Periodic timer checking timing increments.
   Timer? _ticker;
 
-  /// Getters exposing current countdown state values to facade listeners
-  int get timerRemaining => _timerRemainingSeconds;
-  int get timerInitial => _timerInitialSeconds;
-  bool get timerRunning => _timerRunning;
-  bool get timerAlertActive => _timerAlertActive;
+  @override
+  TimerState build() {
+    // Clean up timer resource on provider dispose
+    ref.onDispose(() {
+      _ticker?.cancel();
+    });
+    return const TimerState();
+  }
 
-  /// Resumes or pauses the countdown state machine.
-  /// If the countdown alert is flashing, clicking play will silence the alarm.
+  /// Toggles countdown activity. Silences active flashing alarms on toggle.
   void toggleTimer() {
-    if (_timerAlertActive) {
+    if (state.timerAlertActive) {
       silenceAlert();
       return;
     }
 
-    _timerRunning = !_timerRunning;
-    if (_timerRunning) {
+    final isRunning = !state.timerRunning;
+    if (isRunning) {
       // Start segment
-      _timerStartTime = DateTime.now();
+      state = state.copyWith(
+        timerRunning: true,
+        timerStartTime: () => DateTime.now(),
+      );
       _startTicker();
-      AppLogger.info("Countdown timer started. Remaining seconds: $_timerRemainingSeconds");
+      AppLogger.info("Countdown timer started. Remaining seconds: ${state.timerRemainingSeconds}");
     } else {
       // Pause segment
-      if (_timerStartTime != null) {
-        _timerAccumulatedSeconds += DateTime.now().difference(_timerStartTime!).inSeconds;
+      int accumulated = state.timerAccumulatedSeconds;
+      if (state.timerStartTime != null) {
+        accumulated += DateTime.now().difference(state.timerStartTime!).inSeconds;
       }
-      _timerStartTime = null;
       _ticker?.cancel();
       _ticker = null;
-      AppLogger.info("Countdown timer paused. Remaining seconds: $_timerRemainingSeconds");
+      state = state.copyWith(
+        timerRunning: false,
+        timerStartTime: () => null,
+        timerAccumulatedSeconds: accumulated,
+      );
+      AppLogger.info("Countdown timer paused. Remaining seconds: ${state.timerRemainingSeconds}");
     }
-    notifyListeners();
   }
 
-  /// Cancels any active timing logic and rolls the timer back to its initial start duration.
+  /// Reset countdown timing to the initial configuration state.
   void resetTimer() {
-    _timerRunning = false;
-    _timerStartTime = null;
-    _timerAccumulatedSeconds = 0;
-    _timerRemainingSeconds = _timerInitialSeconds;
     _ticker?.cancel();
     _ticker = null;
-    AppLogger.info("Countdown timer reset back to $_timerRemainingSeconds seconds.");
-    notifyListeners();
+    state = state.copyWith(
+      timerRunning: false,
+      timerStartTime: () => null,
+      timerAccumulatedSeconds: 0,
+      timerRemainingSeconds: state.timerInitialSeconds,
+    );
+    AppLogger.info("Countdown timer reset back to ${state.timerRemainingSeconds} seconds.");
   }
 
-  /// Updates the base target countdown duration. Only valid when the timer is paused.
+  /// Sets countdown target durations.
   void setTimerDuration(int totalSeconds) {
-    if (_timerRunning) return;
-    _timerInitialSeconds = totalSeconds;
-    _timerRemainingSeconds = totalSeconds;
-    _timerAccumulatedSeconds = 0;
-    notifyListeners();
+    if (state.timerRunning) return;
+    state = state.copyWith(
+      timerInitialSeconds: totalSeconds,
+      timerRemainingSeconds: totalSeconds,
+      timerAccumulatedSeconds: 0,
+    );
   }
 
-  /// Modifies current duration values by a custom offset (used by mouse scroll wheel actions).
-  /// Caps configuration bounds between 0 and 23:59:59 (86399 seconds).
+  /// Adjusts remaining seconds by custom offsets.
   void addTimerSeconds(int offsetSeconds) {
-    if (_timerRunning) return;
-    int target = _timerRemainingSeconds + offsetSeconds;
+    if (state.timerRunning) return;
+    int target = state.timerRemainingSeconds + offsetSeconds;
     if (target < 0) target = 0;
-    if (target > 86399) target = 86399;
+    if (target > 86399) target = 86399; // Cap at 23:59:59
     
-    _timerRemainingSeconds = target;
-    _timerInitialSeconds = target;
-    _timerAccumulatedSeconds = 0;
-    notifyListeners();
+    state = state.copyWith(
+      timerRemainingSeconds: target,
+      timerInitialSeconds: target,
+      timerAccumulatedSeconds: 0,
+    );
   }
 
-  /// Updates hour values from the symmetrical adjusters slider.
+  /// Adjusts hour properties.
   void setTimerHours(int hours) {
-    if (_timerRunning) return;
-    final mins = (_timerRemainingSeconds % 3600) ~/ 60;
-    final secs = _timerRemainingSeconds % 60;
+    if (state.timerRunning) return;
+    final mins = (state.timerRemainingSeconds % 3600) ~/ 60;
+    final secs = state.timerRemainingSeconds % 60;
     setTimerDuration(hours * 3600 + mins * 60 + secs);
   }
 
-  /// Updates minute values from the symmetrical adjusters slider.
+  /// Adjusts minute properties.
   void setTimerMinutes(int minutes) {
-    if (_timerRunning) return;
-    final hrs = _timerRemainingSeconds ~/ 3600;
-    final secs = _timerRemainingSeconds % 60;
+    if (state.timerRunning) return;
+    final hrs = state.timerRemainingSeconds ~/ 3600;
+    final secs = state.timerRemainingSeconds % 60;
     setTimerDuration(hrs * 3600 + minutes * 60 + secs);
   }
 
-  /// Updates second values from the symmetrical adjusters slider.
+  /// Adjusts second properties.
   void setTimerSecondsValue(int seconds) {
-    if (_timerRunning) return;
-    final hrs = _timerRemainingSeconds ~/ 3600;
-    final mins = (_timerRemainingSeconds % 3600) ~/ 60;
+    if (state.timerRunning) return;
+    final hrs = state.timerRemainingSeconds ~/ 3600;
+    final mins = (state.timerRemainingSeconds % 3600) ~/ 60;
     setTimerDuration(hrs * 3600 + mins * 60 + seconds);
   }
 
-  /// Silences the flashing red widget alert overlays and restores the timer to its initial duration state.
+  /// Silences flashing warning overlays and resets countdowns.
   void silenceAlert() {
-    if (_timerAlertActive) {
-      _timerAlertActive = false;
-      _timerRemainingSeconds = _timerInitialSeconds;
+    if (state.timerAlertActive) {
       _ticker?.cancel();
       _ticker = null;
+      state = state.copyWith(
+        timerAlertActive: false,
+        timerRemainingSeconds: state.timerInitialSeconds,
+      );
       AppLogger.info("Timer alert silenced. Timer reset to initial state.");
-      notifyListeners();
     }
   }
 
-  /// Triggers a desktop visual alarm alert.
-  /// Sets flashing alert modes, resets accumulation counts, and runs the Linux native `notify-send` command.
+  /// Triggers full-screen visual alarms and executes native OS notification alerts.
   void _triggerTimerAlert() {
-    _timerAlertActive = true;
-    _timerRunning = false;
-    _timerStartTime = null;
-    _timerAccumulatedSeconds = 0;
     _ticker?.cancel();
     _ticker = null;
+    state = state.copyWith(
+      timerAlertActive: true,
+      timerRunning: false,
+      timerStartTime: () => null,
+      timerAccumulatedSeconds: 0,
+    );
     
     AppLogger.warning("Countdown timer completed! Triggering notification and red flashing alert.");
     
-    // Spawns native Linux shell notification command.
-    // Falls back gracefully if notify-send command is missing or lacks display headers.
     try {
       Process.run('notify-send', [
         '-t', '6000', 
@@ -161,32 +152,21 @@ class TimerController extends ChangeNotifier {
     }
   }
 
-  /// Tickers evaluate elapsed milliseconds using wall-clock timing offsets
-  /// to ensure consistent and correct increments.
+  /// Ticker checking timing shifts.
   void _startTicker() {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (_timerRunning && _timerStartTime != null) {
-        final elapsedMs = DateTime.now().difference(_timerStartTime!).inMilliseconds;
-        final remaining = _timerInitialSeconds - ((elapsedMs / 1000).floor() + _timerAccumulatedSeconds);
+      if (state.timerRunning && state.timerStartTime != null) {
+        final elapsedMs = DateTime.now().difference(state.timerStartTime!).inMilliseconds;
+        final remaining = state.timerInitialSeconds - ((elapsedMs / 1000).floor() + state.timerAccumulatedSeconds);
         
         if (remaining <= 0) {
-          _timerRemainingSeconds = 0;
-          _timerRunning = false;
+          state = state.copyWith(timerRemainingSeconds: 0, timerRunning: false);
           _triggerTimerAlert();
-          notifyListeners();
-        } else if (remaining != _timerRemainingSeconds) {
-          _timerRemainingSeconds = remaining;
-          notifyListeners();
+        } else if (remaining != state.timerRemainingSeconds) {
+          state = state.copyWith(timerRemainingSeconds: remaining);
         }
       }
     });
-  }
-
-  /// Clean up timer subscriptions on destroy.
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
   }
 }

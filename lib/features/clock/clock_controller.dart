@@ -1,49 +1,35 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import '../settings/settings_controller.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// [ClockController] manages system clock synchronization.
-/// It tracks the current date/time and notifies listeners specifically when the second changes,
-/// which triggers fluid flips on the layout digit cards.
-class ClockController extends ChangeNotifier {
-  /// Reference to [SettingsController] to retrieve settings like 12h/24h time formatting.
-  final SettingsController settings;
-
-  /// The active time value currently presented in the clock views.
-  DateTime _now = DateTime.now();
-
-  /// Periodic timer checking system time shifts at high frequency (100ms)
-  /// to ensure flip animations fire precisely on second change bounds.
+/// [ClockNotifier] tracks the current system time and updates its [DateTime] state
+/// on second changes as a Riverpod [Notifier].
+class ClockNotifier extends Notifier<DateTime> {
+  /// Periodic timer checking system time shifts.
   Timer? _ticker;
 
-  /// Constructor initializes the clock controller and kicks off the background ticker.
-  ClockController(this.settings) {
+  @override
+  DateTime build() {
+    // Start background ticker
     _startTicker();
-  }
 
-  /// Exposes the current system time value as a read-only getter.
-  DateTime get now => _now;
+    // Clean up timer resource on provider dispose
+    ref.onDispose(() {
+      _ticker?.cancel();
+    });
+
+    return DateTime.now();
+  }
 
   /// Starts a periodic timer checking if a whole second boundary has elapsed.
-  /// If the current second differs from the previously recorded second, it notifies listeners.
+  /// If the current second differs from the active state second, it updates the state.
   void _startTicker() {
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      final oldNow = _now;
-      _now = DateTime.now();
+      final oldNow = state;
+      final newNow = DateTime.now();
       
-      // We check if the second has shifted, which represents a clock tick event.
-      // This boundary prevents redundant Widget updates 10 times a second.
-      if (oldNow.second != _now.second) {
-        notifyListeners();
+      if (oldNow.second != newNow.second) {
+        state = newNow;
       }
     });
-  }
-
-  /// Cancels the background timer when the controller is destroyed
-  /// to prevent leaks.
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
   }
 }
