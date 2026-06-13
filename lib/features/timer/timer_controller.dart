@@ -3,20 +3,41 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../core/logger.dart';
 
+/// [TimerController] manages countdown timer logic, slider value mappings,
+/// and fires desktop notification triggers when the countdown expires.
+///
+/// In alignment with resource optimization objectives, the countdown ticker
+/// runs *only* when the timer is active (`_timerRunning == true`).
 class TimerController extends ChangeNotifier {
-  int _timerRemainingSeconds = 300; // default 5m
+  /// Remaining countdown duration in seconds. Default is 300s (5 minutes).
+  int _timerRemainingSeconds = 300;
+
+  /// Holds the initial starting time in seconds. Used during reset operations.
   int _timerInitialSeconds = 300;
+
+  /// Track if the timer is actively counting down.
   bool _timerRunning = false;
+
+  /// Active state of the full-screen flashing alert UI when the timer finishes.
   bool _timerAlertActive = false;
+
+  /// System timestamp marking when the countdown segment started or resumed.
   DateTime? _timerStartTime;
+
+  /// Accumulated seconds elapsed in previous segments before pause.
   int _timerAccumulatedSeconds = 0;
+
+  /// Periodical timer checking second shifts.
   Timer? _ticker;
 
+  /// Getters exposing current countdown state values to facade listeners
   int get timerRemaining => _timerRemainingSeconds;
   int get timerInitial => _timerInitialSeconds;
   bool get timerRunning => _timerRunning;
   bool get timerAlertActive => _timerAlertActive;
 
+  /// Resumes or pauses the countdown state machine.
+  /// If the countdown alert is flashing, clicking play will silence the alarm.
   void toggleTimer() {
     if (_timerAlertActive) {
       silenceAlert();
@@ -25,10 +46,12 @@ class TimerController extends ChangeNotifier {
 
     _timerRunning = !_timerRunning;
     if (_timerRunning) {
+      // Start segment
       _timerStartTime = DateTime.now();
       _startTicker();
       AppLogger.info("Countdown timer started. Remaining seconds: $_timerRemainingSeconds");
     } else {
+      // Pause segment
       if (_timerStartTime != null) {
         _timerAccumulatedSeconds += DateTime.now().difference(_timerStartTime!).inSeconds;
       }
@@ -40,6 +63,7 @@ class TimerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Cancels any active timing logic and rolls the timer back to its initial start duration.
   void resetTimer() {
     _timerRunning = false;
     _timerStartTime = null;
@@ -51,6 +75,7 @@ class TimerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates the base target countdown duration. Only valid when the timer is paused.
   void setTimerDuration(int totalSeconds) {
     if (_timerRunning) return;
     _timerInitialSeconds = totalSeconds;
@@ -59,11 +84,13 @@ class TimerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Modifies current duration values by a custom offset (used by mouse scroll wheel actions).
+  /// Caps configuration bounds between 0 and 23:59:59 (86399 seconds).
   void addTimerSeconds(int offsetSeconds) {
     if (_timerRunning) return;
     int target = _timerRemainingSeconds + offsetSeconds;
     if (target < 0) target = 0;
-    if (target > 86399) target = 86399; // Cap at 23:59:59
+    if (target > 86399) target = 86399;
     
     _timerRemainingSeconds = target;
     _timerInitialSeconds = target;
@@ -71,6 +98,7 @@ class TimerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates hour values from the symmetrical adjusters slider.
   void setTimerHours(int hours) {
     if (_timerRunning) return;
     final mins = (_timerRemainingSeconds % 3600) ~/ 60;
@@ -78,6 +106,7 @@ class TimerController extends ChangeNotifier {
     setTimerDuration(hours * 3600 + mins * 60 + secs);
   }
 
+  /// Updates minute values from the symmetrical adjusters slider.
   void setTimerMinutes(int minutes) {
     if (_timerRunning) return;
     final hrs = _timerRemainingSeconds ~/ 3600;
@@ -85,6 +114,7 @@ class TimerController extends ChangeNotifier {
     setTimerDuration(hrs * 3600 + minutes * 60 + secs);
   }
 
+  /// Updates second values from the symmetrical adjusters slider.
   void setTimerSecondsValue(int seconds) {
     if (_timerRunning) return;
     final hrs = _timerRemainingSeconds ~/ 3600;
@@ -92,6 +122,7 @@ class TimerController extends ChangeNotifier {
     setTimerDuration(hrs * 3600 + mins * 60 + seconds);
   }
 
+  /// Silences the flashing red widget alert overlays and restores the timer to its initial duration state.
   void silenceAlert() {
     if (_timerAlertActive) {
       _timerAlertActive = false;
@@ -103,6 +134,8 @@ class TimerController extends ChangeNotifier {
     }
   }
 
+  /// Triggers a desktop visual alarm alert.
+  /// Sets flashing alert modes, resets accumulation counts, and runs the Linux native `notify-send` command.
   void _triggerTimerAlert() {
     _timerAlertActive = true;
     _timerRunning = false;
@@ -113,7 +146,8 @@ class TimerController extends ChangeNotifier {
     
     AppLogger.warning("Countdown timer completed! Triggering notification and red flashing alert.");
     
-    // Trigger notify-send
+    // Spawns native Linux shell notification command.
+    // Falls back gracefully if notify-send command is missing or lacks display headers.
     try {
       Process.run('notify-send', [
         '-t', '6000', 
@@ -127,6 +161,8 @@ class TimerController extends ChangeNotifier {
     }
   }
 
+  /// Tickers evaluate elapsed milliseconds using wall-clock timing offsets
+  /// to ensure consistent and correct increments.
   void _startTicker() {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (timer) {
@@ -147,6 +183,7 @@ class TimerController extends ChangeNotifier {
     });
   }
 
+  /// Clean up timer subscriptions on destroy.
   @override
   void dispose() {
     _ticker?.cancel();
